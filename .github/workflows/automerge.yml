@@ -1,7 +1,7 @@
 name: automerge
 
-# Enables GitHub auto-merge on pull requests opened by dependabot or by the
-# repository owner, acting as the izzykatt-ci GitHub App - so the merge is
+# Enables GitHub auto-merge on pull requests opened by dependabot or by a
+# member of the owning organisation, acting as the izzykatt-ci GitHub App - so the merge is
 # performed by the bot, never by a personal account, and only once every
 # required check on main's ruleset has passed.
 #
@@ -46,12 +46,21 @@ jobs:
           set -eu
           if [ "$EVENT" = "pull_request_target" ]; then
             [ "$PR_DRAFT" = "false" ] || exit 0
-            case "$PR_AUTHOR" in dependabot\[bot\]|"$OWNER") ;; *) exit 0 ;; esac
+            # Eligible: dependabot, or a member/owner of the organisation that
+            # owns this repository. author_association is computed server-side
+            # from the event, so no login is hard-coded here. (repository_owner
+            # is the ORG name, never a user login - comparing the PR author to
+            # it can never be true, which is how the first version of this
+            # file silently ignored the owner's own PRs.)
+            case "$PR_AUTHOR:$PR_ASSOC" in
+              "dependabot[bot]:"*|*":OWNER"|*":MEMBER") ;;
+              *) echo "not eligible: $PR_AUTHOR ($PR_ASSOC)"; exit 0 ;;
+            esac
             gh pr merge --auto --squash "$PR_URL"
             exit 0
           fi
-          gh pr list --repo "$REPO" --state open --draft=false \
-            --json url,author --jq '.[] | select(.author.login == "dependabot" or .author.login == "app/dependabot" or .author.login == env.OWNER) | .url' \
+          gh api "repos/$REPO/pulls?state=open&per_page=100" \
+            --jq '.[] | select(.draft == false and (.user.login == "dependabot[bot]" or .author_association == "OWNER" or .author_association == "MEMBER")) | .html_url' \
           | while read -r url; do
               echo "arming $url"
               gh pr merge --auto --squash "$url" || echo "  (skipped: $url)"
@@ -60,7 +69,7 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           EVENT: ${{ github.event_name }}
           REPO: ${{ github.repository }}
-          OWNER: ${{ github.repository_owner }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_ASSOC: ${{ github.event.pull_request.author_association }}
           PR_DRAFT: ${{ github.event.pull_request.draft }}
