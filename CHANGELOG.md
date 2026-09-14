@@ -17,6 +17,8 @@ Entries are grouped by script. Within a release, use the
 
 - Repository scaffolding: contribution guide, code of conduct, security policy,
   issue and pull request templates, and two CI lint gates.
+- `automerge` workflow: dependabot's and the owner's pull requests are merged
+  by the izzykatt-ci GitHub App once both required checks pass.
 
 ## thumbwall
 
