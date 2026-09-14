@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LeoList — listings only: no sponsored, no chrome, photo filmstrip
 // @namespace    izzykatt.ca
-// @version      1.64.0
+// @version      1.65.0
 // @description  Listings-only LeoList: keep #view-cont > div.col-left, drop sponsored chrome, filmstrip every detail-page photo from the lightbox a.href (w:1024) beside the copy panel. All stock filtering moves into an overlay sidebar on a fixed action button. Parsed photos persist in localStorage with no hit TTL.
 // @author       Izzy Katt
 // @license      MIT
@@ -18,8 +18,14 @@
 // https://www.leolist.cc/personals/* and re-checked 2026-09-04 on
 // /community/activities/* (live DOM): every listing index shares one shell —
 // organic cards live in #main_list inside #view-cont > div.col-left, only the
-// URL section differs. So @match is the whole origin and arm() gates on
-// #main_list, which keeps ad detail pages and the homepage untouched.
+// URL section differs. So @match is the whole origin and arm() gates on the
+// DOM, in two parts: #main_list must exist, and it must hold at least one card
+// listingCard() accepts. The first gate keeps ad detail pages and the homepage
+// untouched. The second keeps an EMPTY category untouched — measured
+// 2026-09-14 on /jobs/software-qa-dba/central-ontario, the container ships with
+// zero cards, and arming on it hid the list's eight non-rendering children by
+// elimination and left a black viewport. An index with no listings now renders
+// stock, down to the site's own "produced no results" panel. See arm().
 //
 // The stock card is not restyled, it is replaced. #main_list is an allowlist
 // (every child hidden, only wraps holding a .nix-leolist-row shown) and each
@@ -79,10 +85,16 @@
 //
 // Selectors (listing + detail dumps, 2026-08-31; re-checked 2026-09-04):
 //   #view-cont > div.col-left             KEEP island
-//   #main_list                            arm() gate + allowlist root
+//   #main_list                            arm() gate 1 + allowlist root
+//   .lst-item                             arm() gate 2 — a real card, via
+//                                         listingCard(); none means empty
+//                                         category, and arm() stands down
 //   a.lst-item__link.mainlist-item        ad href, per card
 //   .lst-item__title                      row heading text
 //   .lst-item__label--sponsored           sponsored card — skip it
+//   #filter-msgs / #no_results            site's own empty state — a SIBLING of
+//                                         #main_list, so it is what shows on an
+//                                         index arm() refuses
 //   .lst-item img.huge                    stock hover popup — hide
 //   .main-list-sponsors                   paid links row — dropped site-wide
 //   body > .human-rights                  notice band — dropped site-wide
@@ -2846,9 +2858,47 @@ html[data-nix-leolist-listings-only] #main_list.nix-leolist-list--full .nix-leol
 
   const arm = () => {
     if (bag.torn) return false;
-    // Every listing index has both; a detail page or the homepage does not, and
-    // hiding the island there would wreck a page we build nothing for.
+    // Two gates, and a listing index is the only page that passes both. A
+    // detail page or the homepage fails the first; an empty category fails the
+    // second. Arming on either would wreck a page we build nothing for.
     if (!document.getElementById('main_list')) return false;
+    // #main_list EXISTING is not evidence of listings. Measured 2026-09-14 on
+    // the live https://www.leolist.cc/jobs/software-qa-dba/central-ontario: the
+    // category is empty and the server still ships the container. Its eight
+    // children are two <script>s, five hidden <input>s (#pageTitle,
+    // #pageDescription, #pageCanonicalUrl{,Fr,Zh}) and one empty
+    // DIV.js-listing-results-count — nothing that renders. The site's own
+    // "Your search produced no results" panel is #no_results, inside
+    // #filter-msgs, a SIBLING of the list and not part of it.
+    //
+    // So the old one-gate arm() armed there, and the allowlist — #main_list > *
+    // display:none, kept only for a wrap holding a .nix-leolist-row — hid all
+    // eight while scan() built no row. Measured in that state: #main_list
+    // 1512x900 with zero visible children, #no_results pushed to y=901, one
+    // viewport of pure black with nothing but the filters button on it. Not
+    // stock, not listings: BLANK. /jobs/* is full of these, which is what
+    // widening past /personals/ exposed.
+    //
+    // DIV.js-listing-results-count is not the gate either, and keeping it in
+    // the allowlist does not help: measured the same day it is 652x0 with an
+    // empty innerHTML and exactly two attributes (class, data-count), so it
+    // renders nothing whether shown or hidden. Nor is its data-count read:
+    // that is the SITE's tally, and listingCard() also refuses sponsored cards
+    // and cards with no a.lst-item__link.mainlist-item — a non-zero count with
+    // nothing we would build is the same blank page again.
+    //
+    // listingWraps() is reused rather than a second "is this a listing" test,
+    // so this gate and the rows the allowlist keeps cannot disagree: both ask
+    // listingCard(), once, in one place.
+    //
+    // FAILS TOWARD STOCK. If the site renames .lst-item, the sponsored label or
+    // the card link, listingCard() returns null for every child, this returns
+    // false, [data-nix-leolist-listings-only] never goes on, and the page
+    // renders stock. The old gate failed the other way: #main_list is a plain
+    // id that survives any card-class rename, so it would still arm and still
+    // hide every child by elimination. Same direction as the rest of the
+    // script — a dead selector stops matching, it never mangles.
+    if (!listingWraps().length) return false;
     // Before applyIsland, not after: the dialog hosts have to be exempt on the
     // very first pass or the modals spend a frame hidden.
     exemptFilterHosts();
@@ -2875,22 +2925,53 @@ html[data-nix-leolist-listings-only] #main_list.nix-leolist-list--full .nix-leol
 
   if (arm()) return;
 
-  const obs = new MutationObserver(() => {
-    if (arm()) obs.disconnect();
-  });
+  // Two arming observers, because arm()'s two gates can be satisfied at
+  // different moments:
+  //
+  //   obs      documentElement, childList — #main_list ARRIVING, which happens
+  //            when <body> is appended. Cheap: only a direct child of <html>
+  //            added or removed fires it.
+  //   listObs  #main_list, childList — CARDS arriving into a list that was
+  //            already there and empty. The listing gate would otherwise turn
+  //            "empty at DOMContentLoaded" into "stock forever", and the site
+  //            refills this list in place: its own filter controls swap the
+  //            children out behind #preloader without touching <html>, so
+  //            neither obs nor DOMContentLoaded would fire again.
+  //
+  // Measured 2026-09-14: on a populated category the cards are in the server
+  // response (11 .lst-item in the raw HTML for /dating/m4c/central-ontario,
+  // 10 for /community/activities/central-ontario), so DOMContentLoaded is
+  // where arming normally lands and listObs never has to fire. It is the late
+  // path, not the main one — and it is attached only where a list already
+  // exists, so a detail page and the homepage still observe nothing but <html>.
+  let listObs = null;
+  const tryArm = () => {
+    if (arm()) {
+      // Disconnect when arming SUCCEEDS. This read `if (!arm())`, which threw
+      // away the only remaining arming path on exactly the pages where the list
+      // arrives after DOMContentLoaded.
+      obs.disconnect();
+      off(listObs);
+      listObs = null;
+      return;
+    }
+    if (listObs || bag.torn) return;
+    const list = document.getElementById('main_list');
+    if (!list) return;
+    listObs = new MutationObserver(tryArm);
+    // Registered so teardown() disconnects it like every other observer — a
+    // re-injection must not leave the previous copy still watching for cards.
+    bag.observers.push(listObs);
+    listObs.observe(list, { childList: true });
+  };
+  const obs = new MutationObserver(tryArm);
   bag.observers.push(obs);
   // childList on documentElement only. subtree:true here meant every mutation
   // of the whole document ran this callback for the life of a page that never
   // arms — an ad detail page parses thousands of nodes past it.
   obs.observe(document.documentElement, { childList: true });
-  document.addEventListener(
-    'DOMContentLoaded',
-    () => {
-      // Disconnect when arming SUCCEEDS. This read `if (!arm())`, which threw
-      // away the only remaining arming path on exactly the pages where the list
-      // arrives after DOMContentLoaded.
-      if (arm()) obs.disconnect();
-    },
-    { once: true, signal: bag.ctrl.signal },
-  );
+  document.addEventListener('DOMContentLoaded', tryArm, {
+    once: true,
+    signal: bag.ctrl.signal,
+  });
 })();
