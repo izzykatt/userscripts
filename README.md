@@ -19,6 +19,7 @@ the same bytes.
 
 | Script | Target | Host |
 |---|---|---|
+| `leolist-listings-only.user.js` | leolist.cc — every classified category: the listing column only, sponsored rows dropped, detail-page photos as a filmstrip, dark by default | _pending_ |
 | `thumbwall.user.js` — **XVideos, XNXX, xHamster & Eporner – Clean Widescreen Gallery** | xnxx.com · xvideos.com · eporner.com · xhamster.com — full-bleed thumbnail wall, autohiding header, video page reduced to player + info strip + related | [![Sleazy Fork](https://img.shields.io/greasyfork/v/595735?label=Sleazy%20Fork)](https://sleazyfork.org/en/scripts/595735-xvideos-xnxx-xhamster-eporner-clean-widescreen-gallery) [![installs](https://img.shields.io/greasyfork/dt/595735)](https://sleazyfork.org/en/scripts/595735-xvideos-xnxx-xhamster-eporner-clean-widescreen-gallery) |
 
 **Host** is where the script is published: [Greasy Fork](https://greasyfork.org)
