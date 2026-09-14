@@ -20,7 +20,7 @@ jobs:
     name: eslint + meta
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Full history so the @version monotonicity check can diff against the
           # base branch. A shallow clone has no merge base to compare with.
@@ -47,7 +47,7 @@ jobs:
     name: node --check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # A userscript is copied verbatim into the browser, so a syntax error is a
       # script that silently never runs. Check it independently of ESLint, which
