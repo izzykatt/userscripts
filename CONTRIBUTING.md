@@ -174,6 +174,24 @@ set, the banned keys, the 500-character line cap, and version monotonicity.
 7. Confirm the failure mode: break your own selector on purpose and check the
    page renders **stock**, not mangled.
 
+## Publishing a script
+
+The repository is the source; the **Sleazy Fork listing is the install
+channel**, because only that copy carries an `@updateURL`.
+
+1. Bump `@version` and add the `CHANGELOG.md` entry.
+2. Write or update `listings/<script>.md` - the listing's Additional info body.
+   Sleazy Fork requires a script to be properly described; an undisclosed
+   behaviour is the most common reason a script is taken down.
+3. Post it on [Sleazy Fork](https://sleazyfork.org). Paste the code, **select
+   Markdown** - the radio is a custom control, and a click that misses leaves
+   HTML selected, which publishes the body as raw `##` and fences (measured,
+   2026-09-14) - then paste the listing body.
+4. Add the listing link to the README catalogue row.
+
+Sleazy Fork rewrites `@downloadURL`/`@updateURL` to its own copy on upload,
+which is why this repository must not carry them.
+
 ## Commit and PR conventions
 
 - **Subject line**: `<script-name>: what changed` — e.g.
