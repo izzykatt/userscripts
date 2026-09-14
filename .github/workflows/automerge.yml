@@ -19,6 +19,11 @@ on:
     types: [opened, reopened, synchronize, ready_for_review]
   push:
     branches: [main]
+  # Daily sweep as well: a PR can outlive its own events (arming failed while
+  # a permission was still pending, dependabot opened it during an outage) and
+  # main may not move for weeks in a repo this small.
+  schedule:
+    - cron: '17 6 * * *'
   workflow_dispatch:
 
 permissions: {}
