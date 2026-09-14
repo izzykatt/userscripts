@@ -44,24 +44,27 @@ jobs:
       # Arming an already-armed PR is a no-op, so the sweep is idempotent.
       - run: |
           set -eu
+          # Eligible: dependabot, or anyone with write/maintain/admin on this
+          # repository - asked of the API with the app token, so PRIVATE org
+          # membership counts. author_association could not be used: for a
+          # member whose membership is private the event reports CONTRIBUTOR,
+          # and repository_owner is the org name, never a login. No account is
+          # named here.
+          eligible() {
+            [ "$1" = "dependabot[bot]" ] && return 0
+            perm=$(gh api "repos/$REPO/collaborators/$1/permission" --jq .permission 2>/dev/null || echo none)
+            case "$perm" in admin|maintain|write) return 0 ;; *) return 1 ;; esac
+          }
           if [ "$EVENT" = "pull_request_target" ]; then
             [ "$PR_DRAFT" = "false" ] || exit 0
-            # Eligible: dependabot, or a member/owner of the organisation that
-            # owns this repository. author_association is computed server-side
-            # from the event, so no login is hard-coded here. (repository_owner
-            # is the ORG name, never a user login - comparing the PR author to
-            # it can never be true, which is how the first version of this
-            # file silently ignored the owner's own PRs.)
-            case "$PR_AUTHOR:$PR_ASSOC" in
-              "dependabot[bot]:"*|*":OWNER"|*":MEMBER") ;;
-              *) echo "not eligible: $PR_AUTHOR ($PR_ASSOC)"; exit 0 ;;
-            esac
+            eligible "$PR_AUTHOR" || { echo "not eligible: $PR_AUTHOR"; exit 0; }
             gh pr merge --auto --squash "$PR_URL"
             exit 0
           fi
           gh api "repos/$REPO/pulls?state=open&per_page=100" \
-            --jq '.[] | select(.draft == false and (.user.login == "dependabot[bot]" or .author_association == "OWNER" or .author_association == "MEMBER")) | .html_url' \
-          | while read -r url; do
+            --jq '.[] | select(.draft == false) | "\(.user.login) \(.html_url)"' \
+          | while read -r author url; do
+              eligible "$author" || { echo "not eligible: $author $url"; continue; }
               echo "arming $url"
               gh pr merge --auto --squash "$url" || echo "  (skipped: $url)"
             done
@@ -71,5 +74,4 @@ jobs:
           REPO: ${{ github.repository }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-          PR_ASSOC: ${{ github.event.pull_request.author_association }}
           PR_DRAFT: ${{ github.event.pull_request.draft }}
