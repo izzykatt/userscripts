@@ -20,6 +20,17 @@ Entries are grouped by script. Within a release, use the
 
 ## thumbwall
 
+### [4.3.3] - 2026-09-14
+
+#### Fixed
+
+- **4.3.2 could blank xvideos video pages.** Its ad-slot rule hid
+  `.exo-ad-ins-container` page-wide; on some video pages the site adds that
+  class to `<body>` itself (adblock bait, dynamic - 2 of 3 loads measured
+  2026-09-14), so the whole document went `display:none`. The two slots are
+  now named by id (`div.e-banner-game`, `#e-banner-game`), like every other
+  entry in the chrome list. Do not run 4.3.2.
+
 ### [4.3.2] - 2026-09-14
 
 #### Fixed
