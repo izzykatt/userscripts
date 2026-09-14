@@ -19,7 +19,7 @@ the same bytes.
 
 | Script | Target | Host |
 |---|---|---|
-| `thumbwall.user.js` | xnxx.com · xvideos.com · eporner.com · xhamster.com — full-bleed thumbnail wall, autohiding header, video page reduced to player + info strip + related | Sleazy Fork |
+| `thumbwall.user.js` | xnxx.com · xvideos.com · eporner.com · xhamster.com — full-bleed thumbnail wall, autohiding header, video page reduced to player + info strip + related | [Sleazy Fork](https://sleazyfork.org/en/scripts/595735-xvideos-xnxx-xhamster-eporner-clean-widescreen-gallery) |
 
 **Host** is where the script is published: [Greasy Fork](https://greasyfork.org)
 for general sites, [Sleazy Fork](https://sleazyfork.org) for scripts targeting
