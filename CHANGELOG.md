@@ -20,6 +20,22 @@ Entries are grouped by script. Within a release, use the
 
 ## thumbwall
 
+### [4.4.0] - 2026-09-14
+
+#### Changed
+
+- **xnxx / xvideos info strip is one row, not stacked rows.** Laid out by the
+  operator in DevTools on 2026-09-14 and reproduced in CSS: title block on
+  the left, rating / votes / actions on the right, wrapping on narrow
+  viewports. On xnxx both strips are direct children of
+  `#video-content-metadata`, so that parent becomes a wrapping flex row -
+  nothing moves in the DOM. On xvideos `#main` (already the flex box that
+  orders hero / strips / grid) switches from a column to a wrapping row; the
+  hero's and grid's chains keep their explicit `width:100%` and take a whole
+  line each, the three strips share the line between. Measured 2026-09-14:
+  xnxx 1002px title + 486px actions on one 68px row at 1512; xvideos
+  1057 / 160 / 247 on one row at 1512 and a clean two-line wrap at 900.
+
 ### [4.3.3] - 2026-09-14
 
 #### Fixed

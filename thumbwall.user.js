@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         XVideos, XNXX, xHamster & Eporner – Clean Widescreen Gallery
 // @namespace    izzykatt.ca
-// @version      4.3.3
+// @version      4.4.0
 // @description  Uncluttered full-width thumbnail wall for xnxx, xvideos, eporner and xhamster. On gallery pages with a multi-row hover-preview grid and real pagination, all but the cards and pager is hidden, the header autohides until the pointer nears the top, and the site's own dark theme is used or restored. Video pages become player + info strip (title, channel, like, subscribe) + related grid. No infinite scroll, filters, downloads or network calls; every other page is left stock.
 // @author       Izzy Katt
 // @license      MIT
@@ -2160,6 +2160,31 @@ html[data-nx-watch] [data-nx-strip] {
 html[data-nx-watch] [data-nx-strip][data-nx-strip] {
   display: flex !important;
 }
+/* ONE ROW, NOT TWO. The operator laid this out by hand in DevTools on
+   2026-09-14 (xnxx watch page): the title block (div.clear-infobar - title,
+   uploader, "5min - 1080p - views") and the votes/actions block
+   (div.metadata-row - rating, thumbs, comments, download, embed, report)
+   share a single row, title on the left, actions on the right. Both strips
+   are DIRECT children of #video-content-metadata on xnxx, so the parent
+   becomes the row and nothing moves in the DOM; the purge already hides
+   every other child of it. wrap, so a long title on a narrow viewport
+   drops the actions to a second line instead of clipping. The :has() gate
+   means a page where neither strip was marked keeps stock flow. */
+html[data-nx-watch] #video-content-metadata:has(> [data-nx-strip]) {
+  display: flex !important;
+  flex-flow: row wrap !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  column-gap: 24px !important;
+}
+html[data-nx-watch] #video-content-metadata:has(> [data-nx-strip]) > [data-nx-strip] {
+  width: auto !important;
+  flex: 0 1 auto !important;
+}
+html[data-nx-watch] #video-content-metadata:has(> [data-nx-strip]) > div.clear-infobar[data-nx-strip] {
+  flex: 1 1 320px !important;
+  min-width: 0 !important;
+}
 /* "RIGHT BELOW THE VIDEO", xvideos shell only (#main with the h2 as a direct
    child). In stock order the title and the uploader/subscribe chips sit
    ABOVE the player and the votes row below. #main becomes a column flex box
@@ -2172,11 +2197,22 @@ html[data-nx-watch] [data-nx-strip][data-nx-strip] {
    block above). */
 html[data-nx-watch] #main:has(> h2.page-title) {
   display: flex !important;
-  flex-direction: column !important;
+  flex-flow: row wrap !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  column-gap: 24px !important;
 }
-html[data-nx-watch] #main:has(> h2.page-title) > [data-nx-bleed]:has([data-nx-hero]) { order: 0 !important; }
-html[data-nx-watch] #main:has(> h2.page-title) > [data-nx-strip] { order: 1 !important; }
-html[data-nx-watch] #main:has(> h2.page-title) > [data-nx-bleed]:has([data-nx-grid]) { order: 2 !important; }
+/* Same one-row treatment as xnxx above, on the xvideos shell: the parent is
+   already the flex box that orders hero / strips / grid, so it wraps instead
+   of stacking. The hero's and the grid's chains keep width:100% from the
+   bleed rule (an explicit width, so the row-flex width-collapse trap on the
+   hero never applies here) and therefore each take a whole line; the three
+   strips (title, uploader chip + subscribe, views/votes) share the line
+   between them, title first and growing. */
+html[data-nx-watch] #main:has(> h2.page-title) > [data-nx-bleed]:has([data-nx-hero]) { order: 0 !important; flex: 0 0 100% !important; }
+html[data-nx-watch] #main:has(> h2.page-title) > [data-nx-strip] { order: 1 !important; width: auto !important; flex: 0 1 auto !important; }
+html[data-nx-watch] #main:has(> h2.page-title) > h2.page-title[data-nx-strip] { flex: 1 1 320px !important; min-width: 0 !important; }
+html[data-nx-watch] #main:has(> h2.page-title) > [data-nx-bleed]:has([data-nx-grid]) { order: 2 !important; flex: 0 0 100% !important; }
 html[data-nx-watch] [data-nx-strip] #video-sponsor-links,
 html[data-nx-watch] #video-tabs > *:not(#v-actions-container),
 html[data-nx-watch] #v-actions .tabs,
