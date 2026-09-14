@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Thumbwall for xnxx, xvideos, eporner & xhamster - full-bleed gallery, clean video page
+// @name         XVideos, XNXX, xHamster & Eporner – Clean Widescreen Gallery
 // @namespace    izzykatt.ca
-// @version      4.3.0
-// @description  Full-bleed thumbnail wall for xnxx, xvideos, eporner and xhamster. On gallery pages with a multi-row hover-preview grid and real pagination, everything but the cards and pager is hidden, the site header autohides until the pointer nears the top edge, and the site's own dark theme is used or restored. Video pages become player + info strip (title, channel, like, subscribe) + related grid. No infinite scroll, filters, downloads or network calls; every other page is left stock.
+// @version      4.3.1
+// @description  Uncluttered full-width thumbnail wall for xnxx, xvideos, eporner and xhamster. On gallery pages with a multi-row hover-preview grid and real pagination, all but the cards and pager is hidden, the header autohides until the pointer nears the top, and the site's own dark theme is used or restored. Video pages become player + info strip (title, channel, like, subscribe) + related grid. No infinite scroll, filters, downloads or network calls; every other page is left stock.
 // @author       Izzy Katt
 // @license      MIT
 // @match        https://www.xnxx.com/*
