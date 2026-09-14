@@ -32,7 +32,7 @@ jobs:
   automerge:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/create-github-app-token@v2
+      - uses: actions/create-github-app-token@v3
         id: app
         with:
           app-id: ${{ vars.CI_APP_ID }}
