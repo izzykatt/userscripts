@@ -184,3 +184,23 @@ set, the banned keys, the 500-character line cap, and version monotonicity.
 - **One logical change per PR.** A selector fix and a redesign are two PRs.
 - Fill in the pull request template. The checklist is the review criteria.
 - By contributing you agree your work is licensed under the MIT Licence.
+
+### How pull requests get merged
+
+Nobody presses the button. The `automerge` workflow arms GitHub's auto-merge
+(squash) on every pull request opened by **dependabot** or by the repository
+owner, acting as the **izzykatt-ci** GitHub App, and GitHub merges it the moment
+`main`'s ruleset is satisfied: both required checks green (`eslint + meta`,
+`node --check`) and every review thread resolved. The merge is therefore always
+performed by the bot, and always after CI - never by hand, never around it.
+
+- **Other contributors' PRs** are not armed automatically; a maintainer reviews
+  and arms them (or merges) once the checks pass.
+- A PR that predates the workflow, or was opened while the bot's credentials
+  were missing, is picked up by the next push to `main` (or a manual run of the
+  workflow), which sweeps every open eligible PR.
+- "Up to date with `main`" is deliberately **not** required. CI is one linter
+  on one file with no runtime dependencies, so the only thing a stale branch
+  can hide is two PRs bumping `@version` to the same number - which the push
+  to `main` lint run reports. A real conflict still blocks the merge; GitHub's
+  three-way merge, not check colour, is the gate.
