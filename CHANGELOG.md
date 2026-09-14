@@ -20,6 +20,17 @@ Entries are grouped by script. Within a release, use the
 
 ## thumbwall
 
+### [4.3.1] - 2026-09-14
+
+#### Changed
+
+- `@name` is now `XVideos, XNXX, xHamster & Eporner – Clean Widescreen
+  Gallery`, shaped like the scripts that rank on Sleazy Fork's by-site pages
+  (sites first in their own casing, then the words people search for).
+  "Thumbwall" was this repository's coinage, not a term anyone searches;
+  "FullScreen"/"Autoplay" were considered and rejected as claims the code
+  does not make. `@description` gains "uncluttered". No code change.
+
 ### [4.3.0] - 2026-09-13
 
 #### Changed
