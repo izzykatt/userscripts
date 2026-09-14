@@ -20,6 +20,18 @@ Entries are grouped by script. Within a release, use the
 
 ## thumbwall
 
+### [4.3.2] - 2026-09-14
+
+#### Fixed
+
+- Search pages on xvideos and xnxx kept a 728x90 ad banner above the wall
+  (`div.e-banner-game > #e-banner-game.exo-ad-ins-container`). The xvideos
+  chrome list was enumerated on 2026-09-13 before the slot had filled, so it
+  measured 0px and was never named. Measured 2026-09-14 on six stock shapes:
+  `.exo-ad-ins-container` is only ever `#ad-footer` (already hidden) or this
+  slot, and never inside the grid, so the class is hidden page-wide on
+  gallery pages along with its wrapper.
+
 ### [4.3.1] - 2026-09-14
 
 #### Changed

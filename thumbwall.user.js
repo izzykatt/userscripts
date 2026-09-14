@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         XVideos, XNXX, xHamster & Eporner – Clean Widescreen Gallery
 // @namespace    izzykatt.ca
-// @version      4.3.1
+// @version      4.3.2
 // @description  Uncluttered full-width thumbnail wall for xnxx, xvideos, eporner and xhamster. On gallery pages with a multi-row hover-preview grid and real pagination, all but the cards and pager is hidden, the header autohides until the pointer nears the top, and the site's own dark theme is used or restored. Video pages become player + info strip (title, channel, like, subscribe) + related grid. No infinite scroll, filters, downloads or network calls; every other page is left stock.
 // @author       Izzy Katt
 // @license      MIT
@@ -1975,6 +1975,19 @@ html[data-nx-thumbwall] h2.page-title,
 html[data-nx-thumbwall] div.search-filters,
 html[data-nx-thumbwall] div.listing_filters,
 html[data-nx-thumbwall] div.date-links { display: none !important; }
+
+/* THE AD SLOT THAT WAS EMPTY WHEN THE LIST ABOVE WAS ENUMERATED. Measured
+   2026-09-14 on six stock shapes (xvideos index/search/best/channel, xnxx
+   index/search): .exo-ad-ins-container occurs exactly twice - #ad-footer
+   (named above) and #e-banner-game, a 728x90 slot inside div.e-banner-game
+   that only SEARCH pages carry on both hosts and that only renders once the
+   network fills it (.is-filled), which is why the 2026-09-13 enumeration -
+   taken before fill - never saw it. Never inside .mozaique on any shape (the
+   grid's native ad cards use .thumb-nat-exo-ad, handled as promos), so the
+   class is a safe page-wide name for "an ad slot". The wrapper is hidden with
+   it so its 90px row does not survive as a blank band. */
+html[data-nx-thumbwall] div.e-banner-game,
+html[data-nx-thumbwall] .exo-ad-ins-container { display: none !important; }
 
 /* NON-CARD CHILDREN OF THE GRID ITSELF - the class of leftover that every
    keeper-based sweep is blind to, because it asks "is this inside a keeper?"
