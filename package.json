@@ -1,0 +1,41 @@
+{
+  "name": "@izzykatt/userscripts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Userscripts shipping alternative experiences for legacy web applications",
+  "license": "MIT",
+  "author": "Izzy Katt <hi@izzykatt.ca>",
+  "homepage": "https://github.com/izzykatt/userscripts#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/izzykatt/userscripts.git"
+  },
+  "bugs": {
+    "url": "https://github.com/izzykatt/userscripts/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "lint": "npm run lint:eslint && npm run lint:meta",
+    "lint:eslint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "lint:meta": "node scripts/meta-lint.mjs",
+    "lint:versions": "node scripts/meta-lint.mjs --versions-against origin/main"
+  },
+  "devDependencies": {
+    "eslint": "^9.15.0",
+    "eslint-plugin-userscripts": "^0.5.6"
+  },
+  "keywords": [
+    "userscript",
+    "userscripts",
+    "violentmonkey",
+    "tampermonkey",
+    "greasemonkey",
+    "greasyfork",
+    "sleazyfork",
+    "userstyle"
+  ]
+}
