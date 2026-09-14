@@ -20,6 +20,25 @@ Entries are grouped by script. Within a release, use the
 - `automerge` workflow: dependabot's and the owner's pull requests are merged
   by the izzykatt-ci GitHub App once both required checks pass.
 
+## leolist-listings-only
+
+### [1.65.0] - 2026-09-14
+
+#### Fixed
+
+- **A category with no listings rendered BLANK, not stock.** The script hides
+  by elimination - `#main_list > *` off, only built rows kept - and `arm()`
+  gated solely on `#main_list` existing. On an empty index (measured
+  2026-09-14: `/jobs/software-qa-dba/central-ontario`, `data-count="0"`, zero
+  `.lst-item`) it armed, hid every child, built nothing, and left a black
+  column. `arm()` now also requires at least one card that `listingCard()`
+  accepts - the same test the allowlist uses, so gate and rows cannot
+  disagree. A `childList` observer on `#main_list` (self-limiting, registered
+  for teardown) still arms if rows arrive late.
+- The old gate failed toward **blank** - an id survives any card-class rename,
+  so a renamed `.lst-item` would still have armed and still hidden everything.
+  The new gate fails toward **stock**, which is the contract.
+
 ## thumbwall
 
 ### [4.4.0] - 2026-09-14
