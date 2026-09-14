@@ -1,0 +1,39 @@
+name: automerge
+
+# Enables GitHub auto-merge on pull requests opened by dependabot or by the
+# repository owner, acting as the izzykatt-ci GitHub App - so the merge is
+# performed by the bot, never by a personal account, and only once every
+# required check on main's ruleset has passed.
+#
+# pull_request_target, not pull_request: dependabot's PRs run `pull_request`
+# with a read-only token and NO repository secrets, so the app credentials
+# would be unreachable. pull_request_target runs in the base branch's context
+# with secrets. That is safe here because nothing from the PR is checked out
+# or executed - the job only asks GitHub to arm auto-merge.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions: {}
+
+jobs:
+  automerge:
+    if: >-
+      github.event.pull_request.draft == false &&
+      (github.event.pull_request.user.login == 'dependabot[bot]' ||
+       github.event.pull_request.user.login == github.repository_owner)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@v2
+        id: app
+        with:
+          app-id: ${{ vars.CI_APP_ID }}
+          private-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+
+      # --auto: GitHub merges when the ruleset is satisfied (both required
+      # checks green, threads resolved). Squash is the only linear method the
+      # ruleset allows besides rebase; squash keeps one commit per PR.
+      - run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
