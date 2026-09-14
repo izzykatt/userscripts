@@ -15,13 +15,11 @@ the same bytes.
 
 ## Catalogue
 
-_No scripts published yet._
-
 <!-- Keep this table sorted by filename. One row per install unit. -->
 
 | Script | Target | Host |
 |---|---|---|
-| — | — | — |
+| `thumbwall.user.js` | xnxx.com · xvideos.com · eporner.com · xhamster.com — full-bleed thumbnail wall, autohiding header, video page reduced to player + info strip + related | Sleazy Fork |
 
 **Host** is where the script is published: [Greasy Fork](https://greasyfork.org)
 for general sites, [Sleazy Fork](https://sleazyfork.org) for scripts targeting
