@@ -39,6 +39,375 @@ Entries are grouped by script. Within a release, use the
   so a renamed `.lst-item` would still have armed and still hidden everything.
   The new gate fails toward **stock**, which is the contract.
 
+
+#### History before 1.65.0
+
+Ported verbatim from the private repository this script came from, in the
+shape it was written there (no dates; the measurement inline). 1.64.0 was the
+move itself - metadata re-pointed at this repository, no logic change.
+
+
+Version history for [`leolist-listings-only.user.js`](./leolist-listings-only.user.js).
+
+
+### v1.63.0
+
+The stock dialogs could not be dismissed with a pointer, and the root cause was not where it looked.
+
+Escape always worked, so the dialog was not "stuck" in the sense of a trapped event — it was stuck in the sense that a mouse had nowhere to click. Measured on the live page: opened from the relocated trigger, #modal-filters renders at 480x664 with body.modal-open set, and all three of the site's backdrops stay at display:none. A click anywhere outside does nothing. Force one backdrop visible by hand, click it, and the dialog closes and clears its own class — which says plainly that dismissal is the site's backdrop handler, and the backdrop simply never got shown. Opened from the stock bar in its original position the same backdrop shows at 1512px wide, so this was a consequence of the relocation: the site pairs a dialog with a backdrop by DOM position, and the bar no longer lives where that lookup expects it.
+
+The fix uses the site's own element and its own handler rather than adding a dismissal path of our own. Each backdrop immediately FOLLOWS its modal — .main-list holds #modal-filters then its backdrop, .main-list-filter holds the category dialog then its backdrop then the ethnicities dialog then its backdrop — so an adjacent-sibling rule shows exactly one scrim, the right one, and can never stack two. Verified on all three dialogs: each opens with its scrim at rgba(0, 0, 0, 0.72), a pointer click outside closes it and clears body.modal-open, and the filter panel stays open behind it.
+
+Motion, kept small and consistent: one duration scale and one easing curve for the panel, the corner controls and the dialogs. Dialogs and their scrim fade rather than appear, which needs both transition-behavior: allow-discrete and a @starting-style — display:none is not an animatable state and without both the transition is skipped silently. Photos fade in as they land, keyed on a marker the loader sets on 'load' rather than on [src]: src is assigned before a byte has decoded, so a src-keyed fade plays against an empty box and the picture still pops in at the end. The two corner controls and the panel's close take a small scale on :active. All of it sits inside a prefers-reduced-motion: no-preference query, and under reduce the photo fade resolves to plain opacity 1 rather than to an invisible image.
+
+Tested: 65 acceptance checks green (25/25 filters — three of them new and covering exactly this bug, 14/14 hardening, 13/13 strip/black, 13/13 fullscreen close) plus the 25/25 responsive gate. The new checks assert the scrim is shown and sized, that a pointer click outside dismisses the dialog and clears body.modal-open, and that dismissing it leaves the panel open — the last one because a click-outside that closed both would be its own bug. Inject to return 82ms on a 100-row page; remap 1690 rules in 23ms.
+
+One note for the next reader: the first version of those checks failed, and the failure was in the test, not the code — they had been inserted after the Escape check, so they ran against a dialog Escape had already closed. The spec re-opens the dialog between the two now.
+
+### v1.62.0
+
+A hardening pass over the whole file, driven by four parallel read-only audits (platform primitives, redundancy, responsiveness/accessibility, stability) and then verified live rather than taken on trust. Two of the audits' sharpest claims did not reproduce and were dropped; three of the defects fixed here were introduced by this session's own earlier versions.
+
+**Off-the-shelf over hand-rolled.** One AbortController now owns every listener and every fetch, so teardown is abort() plus the observer disconnects rather than five hand-matched removeEventListener blocks that each had to repeat their own capture flag. AbortSignal.timeout(15s) rides along on the two fetch paths: without it a hung request held one of eight concurrency slots forever, because the finally() that frees the slot never runs, and eight of them deadlocked enrichment for the life of the page with no retry path. CSS.escape() guards the one selector built from a value read back off the DOM — it lives in the unguarded sweep at document-start, so a quote in that value took the entire script down rather than degrading. The inert attribute, checkVisibility(), matchMedia change events and env(safe-area-inset-*) replace hand-rolled equivalents.
+
+Rejected, with reasons, rather than adopted for the sake of it: popover (a top-layer panel would paint over the site's own z-index-10000 dialogs, which are opened from controls inside the panel), @layer (unlayered author styles beat layered ones for normal declarations, so wrapping this sheet in a layer would lose every non-important rule to stock), :where() (this file fights FOR specificity, not against it), URLSearchParams for the pager (the hand-rolled regex tolerates /page=2 and #page=2, the platform parser does not), and scroll-snap in place of the edge-snapping arrow step.
+
+**Defects found and fixed.** A pending animation frame fired after teardown and rebuilt the panel and both buttons on a page that had just been returned to stock — the two-panel state, arriving one tick late; every coalescer and every builder now checks the torn flag. Three listeners (two DOMContentLoaded, one load) survived teardown entirely and could re-arm a dead copy: they ride the controller now. The DOMContentLoaded arming path read `if (!arm()) obs.disconnect()` — it threw away the only remaining arming path on exactly the pages where the list arrives late; it disconnects on success now, and its observer no longer watches documentElement with subtree:true. arm() sets its elimination flag LAST and drops it if anything throws, so a half-built page degrades to stock instead of showing an allowlist with nothing in it. A wholesale replacement of #main_list was invisible to every observer — nothing watched between col-left and the list, and the list observer watched the node itself, so its own removal never fired: the island pass re-asserts the node from the DOM and rebinds. LUM_INK_LIGHT was 0.7833 against an ink whose real luminance is 0.8169 — a stale constant from an earlier colour; both are derived from their hex now. The OURS guard listed main-list-items but not main-items-list: near-transposed names, both real on the live page, and only one was being skipped. body.light and body.modal-open are restored by teardown rather than merely dropped.
+
+**Non-redundant.** Deleted: a ground block whose every declaration provably lost to the flattening rule's ID-weighted transparent (the page renders identically without it), a duplicate sponsors rule that the site-wide bare layer already outranked, and two rules byte-identical to earlier ones over a superset of elements. The constructed title's hover colour could never render and a:visited was recolouring listing titles behind the sheet's back — both because the site-wide layers scored an ID through their own :not() and our own UI was not excluded from them. One OWN_UI list, rendered two ways, is now the single source for all four exclusion sites including the rules the remap emits at runtime; measured before and after, the title went from rgb(173, 199, 209) to the accent token it asks for.
+
+**DRY.** 57 colour literals became one 17-token palette on the root; var() carries no specificity, so none of the cascade measured elsewhere in this file moved. The ad-link selector was written at five sites with the href re-derived at four (one of them missing the empty-string fallback) — one constant, one accessor. Five identical try/disconnect blocks became one helper, two identical "collect every listing wrap" loops became one, and the WCAG ratio formula is written once.
+
+**Responsive, and now gated.** The copy panel was a non-shrinkable 420px box — wider than a 390px phone and wider than any desktop at 400% zoom, a WCAG 1.4.10 reflow failure by construction; it sizes with min() and clamp() now. The root cause of the sideways scroll was the site's own 990px floor on body and .wrap leaking through the island, which also meant the strip's 100% never constrained anything: relaxed, the strip went 990px to 390px at a 390px viewport and the copy panel to 370px. Fullscreen stopped restating inset:0 in large-viewport units (with a mobile URL bar every row was taller than the visible area) and every height is dvh. The filter button's ride-along is gated to >=700px, where there is room for it, and both corner controls respect the safe-area insets. A new responsive gate asserts no horizontal overflow, a fitting copy panel and an on-screen >=44px control at 320, 390, 768, 1512 and 2560px: 25/25.
+
+**Accessible.** Each row is an <article> named by its own <h2> — the site's heading markup is hidden wholesale by the island, and nothing had replaced it, so the feed announced "article, article, article" with no names. Each description is a focusable labelled region: it is a fixed-height scroll box holding text kept whole, and no keyboard could reach past the visible lines of the primary content. Each strip is a labelled group, since every photo is necessarily alt="". Entering fullscreen focuses the way out and exiting restores focus rather than dropping it on body. The document-level key handler stands down for contenteditable and for listbox/combobox/menu/tablist/slider/grid targets — it had been taking all four arrows from every custom widget on the site.
+
+Tested: four acceptance specs, 62 checks, all green (14/14 hardening, 13/13 strip/black, 13/13 fullscreen close, 22/22 filters), plus the 25/25 responsive gate. The hardening spec is new and covers what this pass added: heading and region semantics, the palette surviving the remap, the key handler standing down (asserted on defaultPrevented, because bailing out correctly still lets the browser scroll natively), teardown leaving zero constructed nodes, zero markers, zero adopted sheets and the stock filter bar back home, and a second inject/teardown cycle producing exactly one of everything. Dark mode re-audited on a homepage, an ad detail page and a listing index: zero light backgrounds and zero text below 3:1 on all three.
+
+Not done, deliberately: a <dialog>-based panel. It would delete the inert toggle, the focus dance and the Escape branch — but a closed dialog is display:none, and the stock controls relocated into the panel would then have zero geometry while it is shut. Nothing measured says the site never re-measures them, so that is a change to make against evidence, not in a hardening pass.
+
+### v1.61.0
+
+Site chrome is gone everywhere, not just on the pages this script rebuilds. A listing index already hid it — applyIsland keeps one island and hides the rest — but an ad detail page, the homepage and every other route still carried the full furniture. Measured on a detail page: HEADER.main-header 1512x92, FOOTER.footer 1512x1073, the sponsors row 1512x64, the notice band 1512x130 and the floating side rail 94px. The document went from 3399px to 2040px, and more than a viewport of paid links stopped sitting under every ad.
+
+Anchored on the SEMANTIC elements at page level — body > header, body > footer, and the one header inside the page's first wrapper, which is where this site puts its own. That is what makes it hold across routes: the homepage ships header-home and footer-home, different classes entirely, and the same two selectors catch them. Nothing nested can match, so a dialog's own <header> — the sign-in sheet's included — is untouched, and the filter panel's header survives on an armed page.
+
+The three named strips (.main-list-sponsors, body > .human-rights, body > .sticky-side) are site classes rather than landmarks, and they are hidden under the same root flag so that a rule which already existed for listing pages now covers the rest of the site too.
+
+The flag is its own: [data-nix-leolist-bare], set beside [data-nix-leolist-dark] at document-start and removed by teardown. Two concerns, two attributes — one says what colour the site is, the other says what is on it.
+
+Verified live 2026-09-13 on an ad detail page, the homepage and a listing index: every one of the five elements goes from its measured height to display:none, and the panel's own header keeps rendering at 65px. Specs 13/13 strip/black, 13/13 fullscreen close, 22/22 filters; both gates pass.
+
+### v1.60.0
+
+The corner controls swap instead of coexisting. The filter button moves from bottom-right to top-right, where fullscreen already put the close icon, and the two are now mutually exclusive: the normal view shows the filter button, fullscreen shows the close icon, never both. They share one geometry block — same 48px circle, same offset, same translucent fill — so the control under the pointer keeps its place and only its job changes.
+
+That reads as one contextual control rather than two that happen to overlap, and it drops a rule the old layout needed: the filter button no longer has to outrank the fullscreen list, because it is not on screen there at all. Both halves of the swap are :has() on the root, for the reason v1.58.0 documented — #main_list sits in DIV.main-items-list inside .col-left, so it is the buttons' uncle and a sibling combinator matches nothing — and :has() carrying its argument's specificity is what lets those two rules outrank the shared block above them.
+
+The panel-edge shift stays on the filter button only. Opening the panel leaves fullscreen, so the close icon is never on screen beside it.
+
+Dark mode computes colour variants from the site's own CSS rather than flattening. The flattening layer below was right for page chrome and wrong wherever the light fill WAS the widget: the age slider proved it, its track and its selected-range bar both went rgba(0, 0, 0, 0) while the handles survived only because they are drawn with a background-image. So every declaration the site ships is now read back out of the CSSOM, its lightness inverted with hue and saturation preserved, and re-emitted under the same selector — 1690 to 1781 rules per page, in 17 to 48ms. A #fff surface becomes near-black; the slider's rgb(72, 107, 224) range bar stays exactly that blue.
+
+Four things that had to be measured rather than assumed:
+
+CHROMA decides neutrality, not HSL saturation. The homepage ground is rgb(252, 252, 248) — four points of yellow in a near white — and HSL calls that saturation 0.40, because its denominator collapses at the light end. Treated as an accent it was pushed to lightness 0.26 WITH that saturation: a cream page became rgb(93, 93, 40), olive, behind every photo. Chroma says 0.02 and gets it right.
+
+Kept colours are re-declared, not skipped. The flattening rule scores an ID through its own :not(), so a colour this layer decides to PRESERVE is wiped by it unless the override says so out loud. The slider accent survived while the mapping was darkening it and vanished the moment the mapping started leaving accents alone.
+
+The page ground is this script's, not the site's. Ground selectors (html, body, :root) and the containers this stylesheet already paints are skipped outright, because a remapped rule carries an ID and would otherwise outrank the base black.
+
+Text needs one runtime pass the stylesheet cannot do. A rule maps colours without knowing what the element will sit ON: rgb(17, 102, 130) text on a kept rgb(77, 170, 218) strip read 2.49 in stock and 1.80 after the lift. One bounded walk of the rendered page now re-inks any text below 3:1 with whichever of a dark or light ink measures better, and every element it touches is remembered so teardown can undo it. A "background is light" gate would have missed that strip entirely — it is a mid-tone at luminance 0.35.
+
+Audited on three page types after the change: homepage, an ad detail page and a listing index all report zero light backgrounds and zero text below 3:1. Two chips that still measure 2.10 and 2.88 were checked against stock and are identical there — the site's own contrast, not this script's.
+
+Also fixed, and it was a real defect: teardown left an orphan. Only one teardown global can exist, so a third injection undoes the second copy and the FIRST copy's panel stays on the page forever — with the site's own filter bar parked inside it. Measured: teardown then re-inject left two panels and two buttons. Relocated nodes now leave a hidden slot behind at their original position, the entry sweep runs ALWAYS rather than only when the global is missing, and a stale panel's non-ours children are parked on the body rather than deleted with it. Teardown now leaves zero panels, zero buttons and zero sheets, and a re-inject gives exactly one.
+
+Dark mode is site-wide, and independent of the redesign. [data-nix-leolist-dark] goes on <html> at document-start, before and regardless of arm(), so an ad detail page, the homepage, a login form and the stock filter dialogs are all dark — every page this script otherwise builds nothing on. The rules are anchored on ELEMENTS, never a framework class: the site ships one light theme and no dark rules, so the element is the only reliable handle.
+
+Two deliberate choices in it. Painted backgrounds are DROPPED rather than repainted, which keeps every background-IMAGE — logos, sprites, icons — exactly where it was while the black root shows through. And text is forced to one light colour: a site-set dark colour on a now-dark surface is invisible text, and legibility beats preserving a semantic red nobody can read.
+
+!important is measured, not defensive. Without it eleven elements on an ad detail page still painted themselves white — DIV.wrap #fff, three DIV.container in #f5f5f0/#fff/#f0f0f0 — because a plain element selector under one root attribute scores (0,1,2) and the site's single-class rules outrank it. A :not() keeps the layer off this script's own UI, which has its own skin and must not lose it to a blanket override.
+
+Dialogs keep their surface, which the blanket rule had taken away. Dropping every painted background is right for page chrome and wrong for a popup: the sign-in / sign-up sheet, the filter dialogs and the language picker all floated transparent over the page behind them. They get an opaque panel (#0b0b10) and an edge, their children stay transparent so the panel reads as one surface, and the scrim behind them is a 72% black instead of nothing.
+
+The :not(#nix-leolist-filters) on those two rules is load-bearing, not decoration. The blanket rule excludes this script's own panel by ID, and a :not() takes the specificity of its most specific argument — so that rule scores an ID, and a plain class rule loses to it even with !important. Measured: the dialog panel came back the moment its rule carried the same :not(), and the backdrops stayed fully transparent until theirs did too.
+
+Audited live 2026-09-13 with a contrast walk rather than a glance. The sign-in / sign-up popup: opaque panel rgb(11, 11, 16) at 480x690, 40 elements inside, zero light backgrounds and zero text below 3:1, over a backdrop at rgba(0, 0, 0, 0.72). Ad detail page: light backgrounds 11 to 1 (a 25px icon chip left white on purpose, so its dark glyph stays visible), text below 3:1 contrast 4 to 0. Homepage: 0 light backgrounds, 0 low-contrast text.
+
+The panel is pure black too. v1.57.0 took every page surface to #000, but the sidebar arrived afterwards carrying Mocha's off-blacks — #0a0a0a on the shell, #11111b on the relocated inputs and buttons, rgb(17 17 27) on the corner controls. All of them are #000 or a black alpha now, so the panel reads as the same surface as the page behind it rather than a grey card laid on top. Hover keeps a lift (#14141c): a black hover on black is no feedback at all. Borders stay #313244, which is what gives the controls their edges against the black.
+
+Measured live 2026-09-13 in all four states, with the hit test rather than geometry alone: normal view puts the filter button at (1440, 24) 48x48 and hit-testable with the close icon display:none; fullscreen inverts it exactly; clicking the close icon restores the first; opening the panel slides the filter button to (1020, 24) and the close icon stays hidden. Specs: 13/13 fullscreen close (now asserting the swap, not merely that the two do not collide), 22/22 filters, 13/13 strip/black.
+
+### v1.59.0
+
+The panel fits its own column now. v1.58.0 was measured on a /property index, where the stock bar happens to be narrow; on /personals the same bar overflowed the 383px rail by 558px, which clipped the category heading, pushed the centred More Filters label clean off screen (the button read as an empty box) and hid the Verified toggle entirely.
+
+It was grid tracks, not widths. The bar is display:grid sized for a full-width page — and so is .filters__row inside it, asking for 410px + 409px + 108px. max-width:100% cannot help there: a track wider than its container overflows it, and the item's percentage resolves against the track. Every grid inside a relocated island is one minmax(0, 1fr) column now, which stacks the controls — the right shape for a sidebar anyway — and min-width:0 goes with it, because an unset min-width:auto pins a flex or grid item to its content width no matter what max-width says.
+
+Relocated islands carry their own mark, [data-nix-leolist-moved], set when they move and deleted when teardown puts them back. That is what the sizing rules hang off, so the panel still names none of the site's classes.
+
+The category heading is a nowrap flex row of category / "in" / location, each half with its own ellipsis. Squeezed into the rail it truncated both halves and broke the word "in" across two lines. It is a block-level flex row that wraps now — display:flex pinned rather than assumed, because an inline-flex heading would shrink-wrap and take its width from its content instead of the column — left-aligned, with the ellipsis machinery switched off inside it.
+
+Wrapping alone was not enough: the chevron still landed on a line of its own, and the reason was margins, not text. Stock spaces the parts for a 960px bar — 9px either side of "in", 17px before the chevron — which came to 400px of content in a 383px column. Those margins are zeroed inside the heading and a 6px column-gap does the spacing, so "Transsexual Escorts in Greater Toronto Area" and its chevron sit on one 37px line, 19px clear of the edge. A longer title still wraps, and now wraps left-aligned like a heading rather than centred like an orphan.
+
+Verified live 2026-09-13 on /personals/shemale-escorts/greater-toronto: zero overflowing elements in the panel, down from seven. All three specs green after every step — 22/22 filters, 13/13 strip/black, 12/12 fullscreen close.
+
+Worth knowing for the next live run: a backgrounded tab stalls enrichment, because IntersectionObserver does not fire in it. The strip spec failed four checks that way and passed 13/13 the moment the tab was activated. Focus the tab first (curl localhost:9222/json/activate/<id>); it is not a regression.
+
+### v1.58.0
+
+All filtering now lives in an overlay sidebar, opened by a fixed action button bottom-right. The controls in it are the site's own, relocated rather than rebuilt, so nothing here reimplements LeoList's query-param plumbing.
+
+Why that is safe is measured, not assumed. DOMDebugger.getEventListeners on the live page says every filter handler is bound DIRECTLY to its control — #search-q change + paste, #form-search submit, #city_barrie change, #available-now change — with nothing delegated through a container, so the nodes keep their wiring when they move. CSS.getMatchedStylesForNode on all ten filter nodes returned ZERO ancestor-keyed rules (every rule that styles them is self-keyed BEM), so they keep their layout outside their old parents too.
+
+Stock filtering turned out to be five islands, not one: the bar (.filters.js-filters), three .ll-modal dialogs (#modal-category-location, #modal-filters, #ethnicities) and the city rail (fieldset.cities-container, over in .col-right). The bar and the rail move into the panel. The dialogs stay exactly where they are — they are position:fixed at z-index 10000 and the site's own JS opens them — and only needed an exemption from applyIsland, which is now a [data-nix-leolist-show] mark rather than a special case in the hide loop.
+
+The panel slides on the 'right' offset, NOT transform/translate. A transformed ancestor becomes the containing block of a fixed descendant, so a dialog opened from inside a translated panel would have been trapped in a 420px box. For the same reason the panel sits at z-index 9000, BELOW the dialogs' 10000, and opening it leaves the fullscreen list (2147483646) so the stack stays honest: page < panel < dialog.
+
+Two bugs the live page caught. The action button was painted over by the fullscreen list because `#main_list.nix-leolist-list--full ~ .nix-leolist-fab` matched nothing — measured DOM says #main_list sits in DIV.main-items-list inside .col-left, so it is the button's uncle, not its sibling; the rule is a :has() on the root now. And Escape closed the panel out from under an open dialog, because the guard tested the event target and a trigger click leaves focus inside the panel; it asserts .ll-modal--open from the DOM instead.
+
+The fullscreen view gets a fixed close icon, top-right. Entering it is a click on a photo; leaving it was the Escape key and nothing else, which is no affordance for a pointer at all. The icon exists only there — display:none by default, switched on by the same root :has(#main_list.nix-leolist-list--full) the action button needs, since #main_list is nobody's sibling — and sits in the opposite corner from the filter button so the two never collide. It rides z-index 2147483647, above the fullscreen list's 2147483646, and the two ways out now share one exitListFull(): the key handler's exitFakeFull is that function, and so is the panel's own "leave fullscreen before opening".
+
+Accessibility: the closed panel is inert, not merely off-canvas, so Tab cannot walk into filters nobody can see. aria-expanded tracks the button, focus moves into the panel on open and back to the button on close, Escape and click-outside both close, and arrows or typing inside the panel never reach the list's keyboard navigation.
+
+Verified live 2026-09-13 under trusted events: 22/22 for the panel, 12/12 for the close icon (hidden at rest, shown and hit-testable on top of the fullscreen list once a photo is clicked, exits on a trusted click, returns on a second entry, Escape still works, gone after teardown), plus the v1.57.0 spec re-run at 13/13. The one that matters: ticking Barrie from inside the panel refetched the site — 10 cards became 4, all Barrie, rows rebuilt, panel still open, bar still in the panel. Teardown puts the bar back under .main-list-filter and the rail back under .col-right, clears the exemptions and removes the panel and button. Also measured: typing a keyword and then clicking More Filters fails to open that dialog on the STOCK page too, so it is the site's behaviour and not a regression from the move.
+
+### v1.57.0
+
+Every surface is black. The four background declarations were Catppuccin Mocha — base #1e1e2e on the page, the list, the strip and the fullscreen overlay, surface0 #313244 on the row behind the copy panel — and on a page whose whole content is photographs that pair reads as a frame drawn around each picture. #000 throughout: the 2px strip gaps and the row margins go black with it, so photos meet black on every edge and nothing boxes them in. The copy panel loses its surface0 lift and now floats on the same black as the strip; it keeps its own 420px column, so the boundary is still the photo edge next to it.
+
+Contrast goes up, not down. Measured against the existing text colours: the description #cdd6f4 is 14.52:1 on black (was 11.34:1 on #1e1e2e), the title link #89b4fa 9.97:1 (was 7.79:1) and its hover #89dceb 13.50:1 (was 10.54:1). All three were already past AAA and all three gained.
+
+Verified live 2026-09-12 on /personals with the same acceptance run as v1.56.0, now 13/13: body, #main_list, .col-left, .nix-leolist-row and .nix-leolist-photos all compute to rgb(0, 0, 0), and the strip order, keyboard walk and teardown checks are unchanged.
+
+### v1.56.0
+
+The copy panel closes each strip instead of leading it. Photos now own the resting frame of every row — the title and description are the end card you arrive at after the last photo, rather than the 420px you scroll past to reach the first one. ensureRow still builds the panel as the strip's only child, so a row with no photos yet is unchanged; renderPhotos inserts every image *before* it (leadWithCopy is trailWithCopy, and the insert anchor is nulled unless the panel really is a child of that strip, because insertBefore throws on a reference node it does not own).
+
+stepPhotos needed no change — it snaps to child edges, not a fixed delta, so it follows the panel wherever it sits. Verified against real layout: four photos of 500/400/600/300 plus the 420px panel with 2px gaps give edges 0/502/904/1506/1808, clientWidth 1200 and maxScroll 1028. Right walks 502, 904, 1028 and holds; Left walks 904, 502, 0 and holds. Both monotonic with no overshoot, and the final Right lands on maxScroll with the whole panel flush against the right edge, so the text is still one key away from the last photo. Only its comment moved (children[0] was the panel; the last child is).
+
+Exercised on a live /personals page 2026-09-12 under trusted events (page-lab's acceptance harness, 12/12): every enriched strip ends on the panel and opens on a photo, none leads with it, exactly one panel per strip. A measured row: six photos at 0/422/844/1266/1687/2109 plus the panel at 2531x420, scrollWidth 2951 against a 1512px viewport, so maxScroll is 1439 and the panel's own edge is past it — the final Right clamps to 1439, where the visible window [1439, 2951] holds the whole panel flush against the right edge. Right walked forward with no backward step and reached it, Left walked back to 0, and teardown put the stock list back (0 rows, flag gone, stock children unhidden).
+
+### v1.55.0
+
+Removed the fact chips. paintFacts, TAG_LABEL and five CSS rules rendered price, area and tag chips from a facts field that no producer has ever written — grep shows x is only ever read back or passed through from a previous read, so paintFacts returned at its first guard every single time. It was an extension point for an external Ollama writer that was never built; the plumbing through readStore, loadDetail, renderPhotos and scan is gone with it.
+
+paintDark is dropLightTheme: it added a .dark class that no rule in this stylesheet has ever matched, and only the .light removal did anything.
+
+hrefSeen was O(rows) per candidate, so O(rows x cards) for every page appended. It is a Set now, topped up by scan() on each list mutation and by growIndex as it appends. scan() itself was two full walks of the list plus a localStorage read per listing; it is one pass that seeds the set, builds the row, arms the observer and marks the snap point, and markSnap is gone.
+
+wait() short-circuits at zero. The gap constants are the fair-use knob and are both 0 today, and setTimeout(0) is still a macrotask — four of them were being paid per listing for nothing. The knob still works if a delay is ever reinstated.
+
+Also: userscripts are linted. eslint's flat config sits next to them and checks.<system>.userscripts-lint runs it under nix flake check, so a typo fails the same gate as everything else instead of surfacing as a dead script in the browser. Verified in both directions — clean on both scripts today, and an injected undefined reference fails the check with no-undef and no-unused-vars.
+
+### v1.54.0
+
+Cleanup pass, plus one real bug. currentIndex() compared row tops against #main_list's own rect top, which is 0 only while the list is the scroll container — true on desktop and in the fullscreen overlay, false below 900px where the media query does not apply and the document scrolls instead. There the list's top goes negative as you move down, every row failed the test and the index pinned to 0, so arrows jumped back to the top of the list. It now clamps to the viewport. Verified against real layout at container tops 0, -300, -900 and -1500: the old formula returned 0 in all four where the correct answers were 0, 1, 3 and 5; the new one is right in all four, and the container-top-0 case is unchanged so desktop and fullscreen do not move.
+
+The [hidden] rule is !important now. applyIsland() and ensureRow() hide by setting the hidden attribute, and this site is already known to ship !important display declarations that outrank plain rules — the same failure that kept SECTION.fa-section on screen for thirty versions.
+
+Dead code removed: a dataset key that was deleted but never set (nixLeolistListingsOnlyInit), both document.exitFullscreen blocks (nothing has called requestFullscreen since v1.43 made the overlay a CSS class, so neither could fire), and the fullscreen rule hiding rowless children, which v1.51.0's allowlist already does with !important.
+
+### v1.53.0
+
+Left/Right stopped working after Up/Down in the fullscreen overlay because the row you landed on had no photos in it yet, and stepPhotos() returns immediately when the strip has nothing to scroll. It looked like clicking an image fixed it; the click was incidental — by then the images had loaded. Measured on a live page in the overlay: of 100 strips only 10 had any overflow, and the rows two and three ahead of the current one had enrich undefined, zero images and canStep false while the current row had four painted images and 2623px of overflow. The cause is geometry: the card IntersectionObserver used a flat 600px margin, which spans several windowed rows but less than one fullscreen row, so arrowing always outran enrichment. The margin now scales with the viewport (max(600, 1.5x innerHeight)) and, more importantly, arrow navigation primes the row it lands on plus the next two through the normal queue instead of waiting for an intersection. Left/Right primes too, so a strip that is not ready fills instead of silently doing nothing.
+
+### v1.52.0
+
+Left/Right arrows step one photo within the listing you are on. They did nothing before: the key handler only matched Up/Down/PageUp/PageDown, and the native fallback could not help either because .nix-leolist-photos has no tabindex so it never takes keyboard focus, and the document cannot scroll sideways. Horizontal movement was trackpad-only, which left the keyboard flow half finished. The step snaps to a child edge rather than moving a fixed delta, because photos are w:1024 at native aspect and every one is a different width; children[0] is the copy panel, so Left from the first photo lands back on the text. The row is picked with the same rule Up/Down already used to decide which listing to leave from, now factored out as currentIndex(). Verified against real layout: five children of 420/300/500/250/400 with 2px gaps give edges 0/422/724/1226/1478 and maxScroll 1078; Right walks 422, 724, 1078 and holds, Left walks 724, 422, 0 and holds, both monotonic with no overshoot.
+
+### v1.51.0
+
+#main_list is an allowlist now, not a blocklist. Every child is hidden and only wraps containing a .nix-leolist-row (plus our tail sentinel) are shown, so anything LeoList injects into the list fails closed instead of rendering raw until a rule catches up. The rules need !important, and that is measured rather than defensive: without it the plain rule hid DIV.js-listing-results-count but left DIV.group and SECTION.fa-section visible, which is why the old `#main_list > section` rule never actually worked — a 220px promo section ("Rachel 23 - Mixed City of Toronto") had been rendering between listings the whole time. Verified on a live /personals page: 118 children, 101 visible = the 100 wraps that have rows plus the tail, 0 visible without a row, fa-section and js-listing-results-count both hidden. The now-subsumed `#main_list > section` and `#main_list > :not(div)` rules are gone; the sponsors, safety-tips, pagination and img.huge rules stay because those can also appear outside #main_list, where applyIsland does not reach them. The fullscreen tail rule was raised to !important so it still outranks the allowlist.
+
+### v1.50.0
+
+Purged the hero image. Every photo in a row now comes from the detail page lightbox at w:1024; the list card's [data-testid="listing-pic"] thumb is no longer read at all. It was a 304px square crop of a photo the detail page already serves full size, so it painted one image at the wrong resolution and aspect and then had to be deduped out of the real set by s3 payload — that dedupe is gone too, so the photo it used to shadow now shows at full size like the rest. Follow-on renames: .nix-leolist-extra is .nix-leolist-photo and renderExtra is renderPhotos, since "extra" only ever meant "extra to the hero". Also dropped a dead `stock` lookup in ensureRow. Trade-off: a row is now copy-panel-only until its detail fetch lands, where the thumb used to paint immediately from the list page.
+
+### v1.49.0
+
+Dropped every typographic spacing override in the constructed UI: 5 line-height, 6 letter-spacing and 2 word-spacing declarations, plus font-variant-ligatures:none and hyphens:none. The v1.36 tracking was tuned when the type was silently rendering at 5/8 size (see v1.48.0); at the correct size it read as loose and harder to scan, not easier. Text now uses the browser defaults. Sizes, colours, the 36ch measure and the flex gaps between title/chips/description are unchanged.
+
+### v1.48.0
+
+The constructed UI sizes type in absolute px instead of rem. LeoList sets html{font-size:10px}, so every rem in this script had been rendering at 5/8 of the size it was written for — the description at 10.5px, the title at 12.5px, chips at 12.5px — and the v1.36 "bigger, spaced type" never actually landed. The 142px of dead space on the right of every copy panel was a symptom: the 36ch measure shrank with the font while the panel stayed a fixed 420px. Measured on the live page, the description now fills the panel exactly (36ch at 17px = 385px vs a 380px content box, dead space 0). Sizes are now immune to whatever root font-size the site sets.
+
+### v1.47.0
+
+Runs on every LeoList listing index, not just /personals/. Verified live on /community/activities/greater-toronto: the same shell (#view-cont > div.col-left, #main_list, .lst-item, a.lst-item__link.mainlist-item, [data-testid="listing-pic"]) with only the URL section differing, and all 18 cards enriching. @match is now the whole origin, arm() gates on #main_list so ad detail pages and the homepage are left alone, and the enrichment guard is a section-agnostic /<section>/../<slug>-<id> test instead of a hardcoded '/personals/' substring that silently skipped every other index.
+
+### v1.46.0
+
+The copy panel (title, fact chips, description) is the first slide of .nix-leolist-photos instead of the last. Text is readable at rest, without scrolling the strip past every photo to reach it. Strip order is now copy -> hero -> extras; the redundant second appendChild of the copy panel is gone.
+
+### v1.45.0
+
+A pause no longer latches cards to 'fail' — they mark 'retry' and re-arm when the pause expires (one 403 used to blank the list for the rest of the session). Pagination follows page N+1 (the first pager control can be "previous") and stops on a repeat/absent next page instead of looping. Cache Storage is swept of legacy versions and trimmed to IMG_MAX — it had no eviction at all; opaque hits are no longer re-put on every load. localStorage pruning is amortized (startup + every PRUNE_EVERY writes + quota), not a full-store parse on every single write.
+
+### v1.44.0
+
+Fair-use delays off (0 ms HTML/image gaps, concurrency 8). 403/429/503 still pause the origin for 1h.
+
+### v1.43.0
+
+Fullscreen overlay on #main_list (no nested Fullscreen API). Only listing wraps snap on Y. Images no longer carry scroll-snap-align (that made every photo a vertical snap point and broke ↑/↓).
+
+### v1.42.0
+
+Vertical snap/arrows step 1 row, not 2.
+
+### v1.41.0
+
+Fact chips are large type (ADHD scan), bigger still in fullscreen.
+
+### v1.40.0
+
+ArrowUp/Down always step listings (1 row fullscreen, 2 rows windowed). Capture-phase scrollIntoView — do not require fullscreen.
+
+### v1.39.0
+
+Fullscreen the list, not a single row. Vertical CSS snap (100vh per listing) so swipe/wheel/arrows move without re-requestFullscreen.
+
+### v1.38.0
+
+Overlay extracted facts (price, area, tags) on the copy pane. Facts come from catalog x (Ollama extract, not more LeoList hits).
+
+### v1.37.0
+
+Desktop CSS scroll-snap on #main_list — 3 rows visible, snap step 2 rows (even wraps get .nix-leolist-snap).
+
+### v1.36.0
+
+Fullscreen ↑/↓, swipe, or wheel moves to the next/prev row and fullscreens it. Bigger, spaced type (ADHD/dyslexia): system-ui, long line-height, tracking, wider copy pane.
+
+### v1.35.0
+
+Hide .main-list-pagination. Append the next index page when the sentinel nears the viewport (same 10s HTML gap). Grow the strip; no pager.
+
+### v1.34.0
+
+Click a photo → that row requestFullscreen() (Escape exits). Same strip, 100vh, scroll-snap. Class fallback if the Fullscreen API denies.
+
+### v1.33.0
+
+Pagehide pauses the fetch queue; pageshow+persisted reconnects IO so listing → ad → Back can restore from bfcache instead of re-fetching.
+
+### v1.32.0
+
+Drop the 1px row border — it stacked with the 2px group margin so image-to-image vertical gap was 4px vs 2px horizontal.
+
+### v1.31.0
+
+Photo strip and copy panel height 384px (was 256).
+
+### v1.30.0
+
+Vertical gap between listing groups matches the 2px photo-strip gap.
+
+### v1.29.0
+
+Window.__nixLeolistTeardown so Kapture can re-inject this file without duplicating rows, observers, or adopted sheets. Preview plugin depends on it.
+
+### v1.28.0
+
+No padding on .nix-leolist-row — the strip is edge to edge in the card.
+
+### v1.27.0
+
+Drop Open. The title in .nix-leolist-copy is the listing link.
+
+### v1.26.0
+
+No extra-photo cap. Every a.href is a slide and a Cache API put; still one image at a time (1s gap on network, 0 on cache hit). Drop +N.
+
+### v1.25.0
+
+Title joins the description in that last slide (.nix-leolist-copy).
+
+### v1.24.0
+
+Description is the last slide of .nix-leolist-photos (after extras / +N). Title stays under the rail. Open stays extreme right, not in the strip.
+
+### v1.23.0
+
+Cache API stores image bytes (www.leolist.cc → imx URLs). localStorage only has URL strings — that is why Application>Cache Storage was empty and Cmd-R still hit the CDN. Hits skip the 1s gap. DevTools "Disable cache" still bypasses HTTP cache; Cache API does not.
+
+### v1.22.0
+
+Drop 304 overlay. Thumb is a square crop; original is not. Extras are a.href only (w:1024/h:0), one by one. Store prefix v4.
+
+### v1.21.0
+
+Hide #main_list > section (and any non-div sibling). Enrich already skipped them; they still painted.
+
+### v1.20.0
+
+Open button on the extreme right of the photo rail.
+
+### v1.19.0
+
+Rows are ours (.nix-leolist-row). Stock .lst-item is hidden. Page-1 title/hero paint immediately; extras still serial.
+
+### v1.18.0
+
+Slower on purpose — 10s between ad HTML, 1s between images.
+
+### v1.17.0
+
+Never lose the page-1 rows. HTML fetches wait 2.5s apart. 403/429/503 pauses origin HTML for this tab (1h). Cache hits still paint extras.
+
+### v1.16.0
+
+Fair use — one listing at a time (HTML), then that row's 304 thumbs one by one, then 1024s one by one. Rows already come from page 1.
+
+### v1.15.0
+
+Enrich only #main_list > div listing rows (Chrome JS path #main_list > div:nth-child(N)). Skip section/aside/sponsors/pagination.
+
+### v1.14.0
+
+Match Catppuccin style-guide + sample.png — page=base, cards=surface0, labels=subtext1, links=blue. Headline is a link so blue, not text.
+
+### v1.13.0
+
+Catppuccin Mocha palette (crust/base/text/subtext0/surface0/blue). Hex only — no @require. Photos unchanged.
+
+### v1.12.0
+
+Constructed dark surface. Dump body was class "light"; no .dark rules in the sheets we fetched, so we don't replay a site theme.
+
+### v1.11.0
+
+Stack 304 img.src under 1024 a.href in one 256px slot (LQIP). Store {lo,hi}; prefix v3. 304 paints first; 1024 fades on load. Same box (object-fit cover) so the square thumb sets width — no blank rail.
+
+### v1.10.0
+
+Height 256px lives on img, not .lst-item. width auto. Card is height auto so title/desc still fit. Drop 3/4 crop so w:1024/h:0 aspect holds.
+
+### v1.9.0
+
+Every .lst-item img is width/height auto (site CSS still pins some).
+
+### v1.8.0
+
+Drop 160px height locks (auto). .lst-item is 256px.
+
+### v1.7.0
+
+Successful rows do not expire. imx filenames are content-hashed UUIDs; a URL is that blob forever. Ads can still swap in new hashes — we only refetch HTML when the listing is unknown or LRU-evicted (cap).
+
+### v1.6.0
+
+Store a.href not img.src. Signed imgproxy paths cannot be rewritten from 304→1024. Cache prefix bumped to v2 so stale 304 URLs are not reused (one HTML refetch of near-viewport misses).
+
+### v1.5.0
+
+#view-cont full width. The 960px well is the parent .main-list-container.container (measured 2026-08-31, col-left x=276 w=960 on a 1512px viewport); widening #view-cont alone is a no-op.
+
+### v1.4.0
+
+Parsed {desc, photos} live in localStorage (key nix-leolist.v1:<href>, TTL 6h, cap 400, 15min negative cache). Refresh/revisit hits the store, not the origin. In-memory Map is L1 for the current document. Fair-use: we never crawl pagination; we only fetch a card that is near-viewport AND uncached.
+
 ## thumbwall
 
 ### [4.4.0] - 2026-09-14
