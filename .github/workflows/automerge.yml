@@ -10,18 +10,21 @@ name: automerge
 # would be unreachable. pull_request_target runs in the base branch's context
 # with secrets. That is safe here because nothing from the PR is checked out
 # or executed - the job only asks GitHub to arm auto-merge.
+#
+# push-to-main and workflow_dispatch SWEEP every open eligible PR. Without the
+# sweep a PR that predates this workflow, or one opened before the app
+# credentials existed, would sit mergeable forever with nobody to arm it.
 on:
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 permissions: {}
 
 jobs:
   automerge:
-    if: >-
-      github.event.pull_request.draft == false &&
-      (github.event.pull_request.user.login == 'dependabot[bot]' ||
-       github.event.pull_request.user.login == github.repository_owner)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/create-github-app-token@v2
@@ -33,7 +36,26 @@ jobs:
       # --auto: GitHub merges when the ruleset is satisfied (both required
       # checks green, threads resolved). Squash is the only linear method the
       # ruleset allows besides rebase; squash keeps one commit per PR.
-      - run: gh pr merge --auto --squash "$PR_URL"
+      # Arming an already-armed PR is a no-op, so the sweep is idempotent.
+      - run: |
+          set -eu
+          if [ "$EVENT" = "pull_request_target" ]; then
+            [ "$PR_DRAFT" = "false" ] || exit 0
+            case "$PR_AUTHOR" in dependabot\[bot\]|"$OWNER") ;; *) exit 0 ;; esac
+            gh pr merge --auto --squash "$PR_URL"
+            exit 0
+          fi
+          gh pr list --repo "$REPO" --state open --draft=false \
+            --json url,author --jq '.[] | select(.author.login == "dependabot" or .author.login == "app/dependabot" or .author.login == env.OWNER) | .url' \
+          | while read -r url; do
+              echo "arming $url"
+              gh pr merge --auto --squash "$url" || echo "  (skipped: $url)"
+            done
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
+          EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
           PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
