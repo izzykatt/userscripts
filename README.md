@@ -19,7 +19,7 @@ the same bytes.
 
 | Script | Target | Host |
 |---|---|---|
-| `thumbwall.user.js` | xnxx.com · xvideos.com · eporner.com · xhamster.com — full-bleed thumbnail wall, autohiding header, video page reduced to player + info strip + related | [Sleazy Fork](https://sleazyfork.org/en/scripts/595735-xvideos-xnxx-xhamster-eporner-clean-widescreen-gallery) |
+| `thumbwall.user.js` — **XVideos, XNXX, xHamster & Eporner – Clean Widescreen Gallery** | xnxx.com · xvideos.com · eporner.com · xhamster.com — full-bleed thumbnail wall, autohiding header, video page reduced to player + info strip + related | [![Sleazy Fork](https://img.shields.io/greasyfork/v/595735?label=Sleazy%20Fork)](https://sleazyfork.org/en/scripts/595735-xvideos-xnxx-xhamster-eporner-clean-widescreen-gallery) [![installs](https://img.shields.io/greasyfork/dt/595735)](https://sleazyfork.org/en/scripts/595735-xvideos-xnxx-xhamster-eporner-clean-widescreen-gallery) |
 
 **Host** is where the script is published: [Greasy Fork](https://greasyfork.org)
 for general sites, [Sleazy Fork](https://sleazyfork.org) for scripts targeting
@@ -31,12 +31,15 @@ adult sites. Greasy Fork will reject or relocate the latter — see
 1. Install a userscript manager. These are developed against
    **[Violentmonkey](https://violentmonkey.github.io/)**; Tampermonkey and
    Greasemonkey are expected to work but are not tested.
-2. Open a script's **raw** URL. The manager intercepts it and offers to install.
+2. **Install from the listing linked in the catalogue** (the green *Install*
+   button on Greasy Fork / Sleazy Fork). That copy carries the fork's own
+   `@updateURL`, so your manager picks up every new version automatically.
 
-There is **no `@updateURL` or `@downloadURL`** in any script here, by design.
-Pointed at a repository, those let a push to `main` mutate an installed copy on
-every user's machine with no review. Updates are a deliberate manual re-install,
-or automatic via Greasy Fork / Sleazy Fork if you installed from there.
+The files in this repository are the **source**, not the install channel.
+There is **no `@updateURL` or `@downloadURL`** in any script here, by design:
+pointed at a repository, those let a push to `main` mutate an installed copy on
+every user's machine with no review. Installing a raw file from here works, but
+it will never update itself — re-install by hand, or switch to the listing.
 
 ## Design rules every script holds to
 
