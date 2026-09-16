@@ -48,7 +48,7 @@ It removes; it never adds.
 ```
 
 - **Kept:** video cards · pager · the site's own dark theme (used, or restored where the site drops it)
-- **Hidden:** promos · sidebars · tag clouds · footers · sponsor rows · ad slots · HD/CC/duration badges on thumbnails
+- **Hidden:** promos · sidebars · tag clouds · footers · sponsor rows · ad slots · in-grid promo tiles (cards that link to no video) · HD/CC/duration badges on thumbnails
 
 **3. The video page** each card links to becomes:
 
@@ -68,7 +68,7 @@ It removes; it never adds.
 └───────────────────────────────────────────────────────────┘
 ```
 
-The row under the player is the site's **own** title, channel link, like/favourite and subscribe controls — untouched, so they work exactly as before. On xnxx/xvideos it is one line: title left, votes and actions right.
+The row under the player is the site's **own** title, channel link, like/favourite and subscribe controls — untouched, so they work exactly as before. On xnxx/xvideos it is one line: title left, votes and actions right. On pornhub it is three: the title, then views / date / like / favourites / clip / add-to / share, then the channel with its Subscribe button.
 
 **Anything that doesn't pass the gate is left completely stock.** If a selector rots, the page renders stock — never mangled.
 
@@ -91,9 +91,9 @@ Not a repost: nothing listed does the gallery gate + purge + autohide + video-pa
 
 ## Known limits
 
-- **pornhub** shows its age-consent modal on a first visit; the wall renders behind it and the player only loads a source once that modal is dismissed. That is the site's gate, not the script's.
+- **pornhub** shows its age-consent modal on a first visit; the wall renders behind it and the player only loads a source once that modal is dismissed. That is the site's gate, not the script's. Pornhub also serves a pre-roll ad inside the player element — the script does not touch the player, so the ad behaves exactly as it does on the stock page.
 - **xhamster** related rail is lazily hydrated (placeholder cards fill on scroll). On a very slow load the video page can come up stock until the rail hydrates; reload fixes it.
-- **youporn** was dropped (2026-09): its player sits behind an age gate that only clears on a real click, so there is nothing to redesign.
+- **youporn** was dropped (2026-09), and its sibling pornhub was not, which is worth explaining since both run the same engine: youporn's player element computed `visibility:hidden` with an empty `src` on a stock page — there was no box to redesign. Pornhub's computes visible, lays out a real box and loads a source, so it gets the full treatment.
 - Built and verified on Chromium (Violentmonkey). Firefox should work (`:has()` is used, so Firefox ≥ 121) but is not measured.
 
 ## Privacy
