@@ -410,6 +410,55 @@ Parsed {desc, photos} live in localStorage (key nix-leolist.v1:<href>, TTL 6h, c
 
 ## thumbwall
 
+### [5.0.0] - 2026-09-15
+
+#### Added
+
+- **pornhub is host 5.** Major version because the host list changed - the same
+  reason 4.0.0 was major when youporn left. Both surfaces are redesigned, at
+  parity with the other four: gallery pages become the full-bleed wall with
+  the hover title overlay and the autohiding header, and `/view_video.php`
+  becomes player + info strip (title, views/likes/actions, channel +
+  Subscribe) + the related wall below it.
+- **Why this Aylo host and not the other one.** youporn was delisted at 4.0.0
+  because its player was gated, not styled: on a stock watch page
+  `#videoWrapper`, `#videoContainer` and the `<video>` all computed
+  `visibility:hidden` with an empty `src`. pornhub, measured 2026-09-15 on
+  stock pages, does not do that - `video.mgp_videoElement` computes
+  `visibility:visible`, lays out a real 989x556 box and reaches
+  `readyState 4`. The difference is architectural, so the host gets the full
+  treatment rather than a delisting.
+- Measured gate, all four signals, on `/video?page=2` at 1512x862:
+  `ul#videoCategory` renders 1098x3033 as a real `display:grid` box with 43
+  video children of 45 (share 0.96) across 11 rows, and
+  `div.pagination3` exposes 7 distinct `?page=N` targets. Armed and
+  screenshot-confirmed on `/`, `/video?page=N` and `/video?c=N`;
+  `/information/terms` renders stock, as do both surfaces when a selector is
+  broken on purpose.
+
+#### Fixed
+
+- **A percentage `padding-bottom` re-resolved against the widened ancestor and
+  produced a 295px-too-tall hero.** `#player` carries no height - it is
+  `padding-bottom: 56.25%`, and a percentage padding resolves against the
+  containing block's WIDTH. Full-bleed widens that block from 989 to 1512, so
+  the hack produced a 989x851 box: right width, wrong height, measured
+  2026-09-15. `max-width` on the hero cannot fix it (the cap applies to the
+  hero, the percentage reads the parent), so the sheet zeroes the padding,
+  pins `aspect-ratio: 989 / 556` and stretches the four boxes the site nests
+  inside it. This is the same class of trap as youporn's `display:contents`
+  grid - an Aylo engine sizing a box by something other than its own height.
+- **The kept strips sat 10px wider than the hero.** They compute
+  `content-box` and carry their own 10px side padding, so `max-width: 989px`
+  rendered 1009px against a 989px player - a visible stagger down the left
+  edge. `box-sizing: border-box` on the strip rule.
+
+#### Changed
+
+- `@name` and `@description` lead with pornhub; `@match` gains
+  `https://www.pornhub.com/*` and `https://pornhub.com/*`; dispatch gains a
+  `pornhub.com` branch. Nothing in the other four modules changed.
+
 ### [4.4.0] - 2026-09-14
 
 #### Changed

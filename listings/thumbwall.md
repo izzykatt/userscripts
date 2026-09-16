@@ -1,13 +1,13 @@
 ## What it does
 
-One script, four hosts: **xnxx.com, xvideos.com, eporner.com, xhamster.com**.
+One script, five hosts: **pornhub.com, xnxx.com, xvideos.com, eporner.com, xhamster.com**.
 It removes; it never adds.
 
 **1. The gate** — decides per page, every page load:
 
 ```
 ┌──────────────────────────────────┐                        
-│     any page on the 4 sites      │                        
+│     any page on the 5 sites      │                        
 └─────────────────┬────────────────┘                        
                   │                                         
                   ▼                                         
@@ -84,13 +84,14 @@ The row under the player is the site's **own** title, channel link, like/favouri
 |---|---|
 | PervertMonkey (xvideos / xhamster / eporner) — infinite scroll, filters, watched marks, shared 360 KB core | keep-list redesign of the gallery and video pages; no feed features; self-contained |
 | PornEnhance (xvideos) — ad removal + layout | full-bleed wall + autohide header + video page reduction |
-| Better xHamster / Xhamster Widescreen — bigger player | player **and** gallery **and** the row under the player, on four hosts |
+| Better xHamster / Xhamster Widescreen — bigger player | player **and** gallery **and** the row under the player, on five hosts |
 | Eporner Auto Unmute | included, plus the wall |
 
-Not a repost: nothing listed does the gallery gate + purge + autohide + video-page strip together, and nothing does it across these four hosts in one file.
+Not a repost: nothing listed does the gallery gate + purge + autohide + video-page strip together, and nothing does it across these five hosts in one file.
 
 ## Known limits
 
+- **pornhub** shows its age-consent modal on a first visit; the wall renders behind it and the player only loads a source once that modal is dismissed. That is the site's gate, not the script's.
 - **xhamster** related rail is lazily hydrated (placeholder cards fill on scroll). On a very slow load the video page can come up stock until the rail hydrates; reload fixes it.
 - **youporn** was dropped (2026-09): its player sits behind an age gate that only clears on a real click, so there is nothing to redesign.
 - Built and verified on Chromium (Violentmonkey). Firefox should work (`:has()` is used, so Firefox ≥ 121) but is not measured.

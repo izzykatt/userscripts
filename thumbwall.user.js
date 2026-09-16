@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         XVideos, XNXX, xHamster & Eporner – Clean Widescreen Gallery
+// @name         Pornhub, XVideos, XNXX, xHamster & Eporner – Clean Widescreen Gallery
 // @namespace    izzykatt.ca
-// @version      4.4.0
-// @description  Uncluttered full-width thumbnail wall for xnxx, xvideos, eporner and xhamster. On gallery pages with a multi-row hover-preview grid and real pagination, all but the cards and pager is hidden, the header autohides until the pointer nears the top, and the site's own dark theme is used or restored. Video pages become player + info strip (title, channel, like, subscribe) + related grid. No infinite scroll, filters, downloads or network calls; every other page is left stock.
+// @version      5.0.0
+// @description  Uncluttered full-width thumbnail wall for pornhub, xnxx, xvideos, eporner and xhamster. On gallery pages with a multi-row hover-preview grid and real pagination, all but the cards and pager is hidden, the header autohides until the pointer nears the top, and the site's own dark theme is used or restored. Video pages become player + info strip (title, channel, like, subscribe) + related grid. No infinite scroll, filters, downloads or network calls; every other page is left stock.
 // @author       Izzy Katt
 // @license      MIT
 // @match        https://www.xnxx.com/*
@@ -11,6 +11,8 @@
 // @match        https://xvideos.com/*
 // @match        https://www.eporner.com/*
 // @match        https://eporner.com/*
+// @match        https://www.pornhub.com/*
+// @match        https://pornhub.com/*
 // @match        https://xhamster.com/*
 // @match        https://*.xhamster.com/*
 // @homepageURL  https://github.com/izzykatt/userscripts
@@ -5797,6 +5799,642 @@ html[${WATCH_FLAG}] [class~="FYjf-gWsp-b"] { display: none !important; }
   }
 
   /* =========================================================================
+     PORNHUB — host 5, added 2026-09-15.
+
+     WHY THIS HOST IS HERE AT ALL, GIVEN YOUPORN IS NOT. Both run the same
+     Aylo engine, and youporn was delisted (see the file header) because its
+     player was never ours to fix: on a STOCK watch page #videoWrapper,
+     #videoContainer and the <video> all computed visibility:hidden with an
+     empty src, behind a gate that only a real interaction cleared. Pornhub
+     was measured the same way, 2026-09-15, and does NOT do that. On a stock
+     watch page video.mgp_videoElement computes visibility:visible, lays out
+     a real 989x556 box, and reaches readyState 4 with a source. The
+     difference is architectural, not incidental, so this host gets the
+     full two-surface redesign the other four get.
+
+     TWO Aylo TRAITS DID CARRY OVER, and both are handled below:
+       1. A GRID TRACK RESERVES THE PURGED COLUMN. div.topSectionGrid is a
+          two-column grid (989 player + 323 right rail). Eliminating the rail
+          leaves its track behind, so the player stays pinned at 989 in a
+          1512 viewport with a dead 323 gutter. The watch sheet collapses
+          that container to display:block. This is the same class of fix
+          youporn needed and is the one piece of its diagnosis worth keeping.
+       2. THE CARD'S ANCHOR IS NOT A DIRECT CHILD. xhamster's card rules
+          reach the thumb with "[CARD] > a"; a pornhub card is
+          li > div.wrap > div.phimage > a.linkVideoThumb > img, measured
+          2026-09-15. Every card rule below is written against that real
+          depth instead, which is also why xhamster's
+          "[CARD] > div:not(info) { display:none }" rule has NO counterpart
+          here - that rule would hide div.wrap, and div.wrap is the branch
+          holding the thumbnail.
+
+     NO THEME ENGINE, ON PURPOSE. Stock pornhub computes body rgb(0,0,0)
+     with rgb(255,255,255) text under both prefers-color-scheme values
+     (measured 2026-09-15), so like xhamster and unlike xnxx/eporner this
+     module carries no palette at all. There is nothing to repaint.
+
+     THE HERO KEEPS THE SITE'S OWN 989x556 - it is centred, never widened.
+     Upscaling would mean overriding all four of the nested boxes the site
+     sizes itself (.video-element-wrapper-js > #playerDiv_<id> >
+     .mgp_videoWrapper > video), which is a bet on private internals for no
+     gain; capping at the site's own size is the same choice xhamster's
+     hero makes at its own 946. Those four ARE overridden, but only to
+     STRETCH them to a box the sheet already pins - see the hero rule's own
+     comment for why the padding-percentage hack forces that much.
+
+     MEASURED WITH A PRE-ROLL IN THE ELEMENT. At measurement time
+     video.mgp_videoElement held a 22s TrafficJunky ad (host
+     vacdn.rtb.tsyndicate.com) rather than the feature, and the ad would not
+     resume under automation, so the content source was never observed in
+     that element. This costs nothing here: markHero() anchors on the
+     CONTAINER (#player) and never reads src, so which clip the element
+     currently holds cannot change what gets marked. It is recorded because
+     it is the one thing a later reader might otherwise re-measure.
+     ========================================================================= */
+  function runPornhub() {
+    /* ul.videos is the shared class on BOTH surfaces' walls - the gallery's
+       ul#videoCategory.nf-videos.videos and the watch page's
+       ul#relatedVideosListing.videos (measured 2026-09-15). The header
+       dropdown lists carry it too; every one of them measured 0x0, so
+       renders() rejects them without needing a second selector. */
+    const GRID_SEL = 'ul.videos';
+    const UNIT_HREF = '/view_video.php';
+    const BAR_SEL = 'header#header';
+
+    const ROOT_FLAG = 'data-ph-thumbwall';
+    const GRID_ATTR = 'data-ph-grid';
+    const ANC_ATTR = 'data-ph-anc';
+    const KEEP_ATTR = 'data-ph-keep';
+    const PAGER_ATTR = 'data-ph-pager';
+    const CARD_ATTR = 'data-ph-card';
+    const TOP_ATTR = 'data-ph-top';
+    const TOPFOCUS_ATTR = 'data-ph-topfocus';
+    const WATCH_FLAG = 'data-ph-watch';
+    const HERO_ATTR = 'data-ph-hero';
+    const STRIP_ATTR = 'data-ph-strip';
+    const SHEET_ID = 'ph-thumbwall-style';
+    const TEARDOWN = '__nixPornhubTeardown';
+
+    const SHARE_MIN = 0.5;
+    const UNITS_MIN = 4;
+    const ROWS_MIN = 2;
+    const TOP_BAND = NIX_TOPBAR_BAND;
+    const TOP_SLACK = NIX_TOPBAR_SLACK;
+
+    /* THE WATCH ROUTE. /view_video.php?viewkey=<key> - the shape every
+       gallery card links to, measured 2026-09-15 by following a real card.
+       Unlike every other host in this file the key lives in the QUERY, not
+       the path, so the route test is a path prefix and the key is never
+       parsed: nothing here needs it. */
+    const WATCH_ROUTE = /^\/view_video\.php$/;
+
+    const SHEET_CSS = `
+html[${ROOT_FLAG}] body {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+html[${ROOT_FLAG}] [${ANC_ATTR}] {
+  box-sizing: border-box !important;
+  max-width: none !important;
+  width: 100% !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  float: none !important;
+}
+html[${ROOT_FLAG}] [${ANC_ATTR}] > *:not([${ANC_ATTR}]):not([${KEEP_ATTR}]):not([${PAGER_ATTR}]):not([${GRID_ATTR}]):not([${HERO_ATTR}]):not([${STRIP_ATTR}]) {
+  display: none !important;
+}
+html[${ROOT_FLAG}] [${GRID_ATTR}] {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(clamp(300px, 28.5vw, 510px), 1fr)) !important;
+  gap: 1px !important;
+  width: auto !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  float: none !important;
+}
+html[${ROOT_FLAG}] [${GRID_ATTR}]:has(> [${CARD_ATTR}]) > *:not([${CARD_ATTR}]) {
+  display: none !important;
+}
+html[${ROOT_FLAG}] [${GRID_ATTR}] > [${CARD_ATTR}] {
+  position: relative !important;
+  width: auto !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  float: none !important;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+}
+/* THE CARD'S OWN THREE-DEEP WRAPPER CHAIN, flattened. A stock card is
+   li > div.wrap.flexibleHeight > div.phimage > a.linkVideoThumb > img
+   (measured 2026-09-15). Each wrapper is stretched to the card box rather
+   than removed, because removing any of them takes the thumbnail with it. */
+html[${ROOT_FLAG}] [${GRID_ATTR}] > [${CARD_ATTR}] > div.wrap,
+html[${ROOT_FLAG}] [${GRID_ATTR}] > [${CARD_ATTR}] div.phimage,
+html[${ROOT_FLAG}] [${GRID_ATTR}] > [${CARD_ATTR}] a.linkVideoThumb {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  display: block !important;
+  border: 0 !important;
+}
+html[${ROOT_FLAG}] [${GRID_ATTR}] > [${CARD_ATTR}] img,
+html[${ROOT_FLAG}] [${GRID_ATTR}] > [${CARD_ATTR}] video {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  object-fit: cover !important;
+  display: block !important;
+}
+/* Everything the anchor carries that is NOT the picture - the duration
+   chip, the "HD" flag, the preview scrim. Written by elimination so a new
+   overlay token ships hidden instead of ships visible; img/picture/video
+   are excluded by name because those ARE the thumbnail. */
+html[${ROOT_FLAG}] [${GRID_ATTR}] > [${CARD_ATTR}] a.linkVideoThumb > *:not(img):not(picture):not(video),
+html[${ROOT_FLAG}] [${GRID_ATTR}] > [${CARD_ATTR}] div.thumbnail-info-wrapper,
+html[${ROOT_FLAG}] [${GRID_ATTR}] > [${CARD_ATTR}] div.add-to-playlist-icon,
+html[${ROOT_FLAG}] [${GRID_ATTR}] > [${CARD_ATTR}] div.preloadLine {
+  display: none !important;
+}
+html[${ROOT_FLAG}] [data-ph-info] {
+  position: absolute !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  top: auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  padding: 26px 10px 9px !important;
+  box-sizing: border-box;
+  opacity: 0;
+  pointer-events: none !important;
+  z-index: 3;
+  background: linear-gradient(to top,
+    rgb(0 0 0 / 82%) 0%, rgb(0 0 0 / 56%) 52%, rgb(0 0 0 / 0%) 100%);
+}
+html[${ROOT_FLAG}] [${GRID_ATTR}] > [${CARD_ATTR}]:hover [data-ph-info],
+html[${ROOT_FLAG}] [${GRID_ATTR}] > [${CARD_ATTR}]:focus-within [data-ph-info] {
+  opacity: 1;
+}
+html[${ROOT_FLAG}] [data-ph-title] {
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden !important;
+  overflow-wrap: anywhere !important;
+  word-break: normal !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  color: #fff !important;
+  font-size: clamp(12px, 0.95vw, 15px) !important;
+  font-weight: 600;
+  line-height: 1.25 !important;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 90%);
+}
+@media (prefers-reduced-motion: no-preference) {
+  html[${ROOT_FLAG}] [data-ph-info] { transition: opacity 140ms ease; }
+}
+html[${ROOT_FLAG}] [${PAGER_ATTR}] {
+  display: block !important;
+  margin: 12px auto !important;
+  text-align: center;
+}
+/* The bar keeps its OWN display (stock header#header computes grid,
+   measured 2026-09-15). xhamster's rule forces display:block here; doing
+   that to a grid header collapses its three-column layout, so only the
+   positioning and the paint are overridden. */
+html[${ROOT_FLAG}] ${BAR_SEL} {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: auto !important;
+  z-index: 9999990;
+  opacity: 0;
+  pointer-events: none;
+}
+html[${ROOT_FLAG}][${TOP_ATTR}] ${BAR_SEL},
+html[${ROOT_FLAG}][${TOPFOCUS_ATTR}] ${BAR_SEL} {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (prefers-reduced-motion: no-preference) {
+  html[${ROOT_FLAG}] ${BAR_SEL} { transition: opacity 140ms ease; }
+}
+
+/* ---- Watch-page hero -------------------------------------------------
+   THE TWO-COLUMN TRACK IS THE WHOLE FIX. div.topSectionGrid lays out
+   989px player + 323px right rail. The rail is eliminated like any other
+   unmarked sibling, but a grid COLUMN survives its contents, so without
+   this the player sits at 989 inside 1512 with a dead gutter. Collapsing
+   the container to block lets the widened ancestor chain reach the hero. */
+html[${WATCH_FLAG}] div.topSectionGrid {
+  display: block !important;
+}
+/* THE HERO IS PINNED BY aspect-ratio BECAUSE THE SITE SIZES IT WITH A
+   PERCENTAGE PADDING HACK, and that interacts with full-bleed in a way
+   worth spelling out - it cost a measured round trip. Stock #player is
+   989x556 and carries NO height: it is padding-bottom: 56.25%, and a
+   percentage padding resolves against the CONTAINING BLOCK'S WIDTH, not
+   its own. Widening the ancestor chain to 1512 (which is the entire point
+   of the redesign) re-resolved that 56.25% against 1512 and produced a
+   989x851 hero - the right width, a 295px-too-tall box, measured
+   2026-09-15. Capping max-width alone cannot fix it, because the cap
+   applies to the hero and the percentage reads the PARENT. So the padding
+   hack is zeroed and replaced with an explicit ratio, and the four nested
+   boxes the site absolutely-positions inside it are stretched to follow.
+   That is a deviation from the "do not resize the hero chain" line taken
+   on xhamster: there the wrapper's own box was already correct, here it
+   provably is not. */
+html[${WATCH_FLAG}] [${HERO_ATTR}] {
+  width: 100% !important;
+  max-width: 989px !important;
+  margin: 0 auto !important;
+  float: none !important;
+  padding-bottom: 0 !important;
+  height: auto !important;
+  aspect-ratio: 989 / 556 !important;
+}
+html[${WATCH_FLAG}] [${HERO_ATTR}] > div.video-element-wrapper-js,
+html[${WATCH_FLAG}] [${HERO_ATTR}] div.playerFlvContainer,
+html[${WATCH_FLAG}] [${HERO_ATTR}] div.mgp_videoWrapper,
+html[${WATCH_FLAG}] [${HERO_ATTR}] video.mgp_videoElement {
+  width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
+  padding-bottom: 0 !important;
+}
+
+/* THE INFO STRIP (see markStrip): the title block, the view-count/actions
+   menu, and the channel row that carries Subscribe. All three are direct
+   children of div.video-wrapper.modelInfo - the ANC node the elimination
+   rule targets - so marking them is the whole keep mechanism. They already
+   FOLLOW the player in stock document order, so unlike xhamster no flex
+   reorder is needed. */
+/* box-sizing is set here for alignment, not tidiness: the strips carry
+   their own 10px side padding and compute content-box, so a bare
+   max-width: 989px rendered them 1009px wide against a 989px hero - a
+   visible 10px stagger down the left edge, measured 2026-09-15. */
+html[${WATCH_FLAG}] [${STRIP_ATTR}] {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  max-width: 989px !important;
+  margin: 0 auto !important;
+  float: none !important;
+}
+/* Inside the kept strip, drop the rows that are link farms rather than
+   information: pornstar chips, category chips and the collapsed tag rows. */
+html[${WATCH_FLAG}] [${STRIP_ATTR}] div.video-info-row.js-suggestionsRow,
+html[${WATCH_FLAG}] [${STRIP_ATTR}] div.video-info-row.showLess {
+  display: none !important;
+}
+`;
+
+    let L = null;
+    let boot = null;
+    const getL = () => L;
+    const { adoptSheet, dropSheet } = makeSheetKit(SHEET_CSS, SHEET_ID);
+    const topbar = makeTopbar({ topAttr: TOP_ATTR, topFocusAttr: TOPFOCUS_ATTR, barSel: BAR_SEL, band: TOP_BAND, slack: TOP_SLACK });
+
+    const renders = (el) => {
+      if (!el || !el.isConnected) { return false; }
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') { return false; }
+      const r = el.getBoundingClientRect();
+      return r.width > 300 && r.height > 150;
+    };
+    const isUnit = (el) => !!el.querySelector('a[href*="' + UNIT_HREF + '"]');
+    function rowsOf(el) {
+      const ys = new Set();
+      for (const kid of el.children) {
+        const r = kid.getBoundingClientRect();
+        if (r.height > 20) { ys.add(Math.round(r.top / 10)); }
+      }
+      return ys.size;
+    }
+    const PAGE_TOKEN = /(?:[?&](?:p|page|from)=\d+)|(?:\/\d{1,4}(?:\/|$))|(?:-\d{1,4}(?:\/|$))/;
+    function pagedTargets(el) {
+      const anchors = Array.from(el.querySelectorAll('a[href]'));
+      if (!anchors.length || anchors.length > 60) { return null; }
+      for (const a of anchors) {
+        if ((a.getAttribute('href') || '').includes(UNIT_HREF)) { return null; }
+      }
+      const seen = new Set();
+      for (const a of anchors) {
+        let u;
+        try { u = new URL(a.getAttribute('href') || '', location.href); } catch { continue; }
+        const s = u.pathname + u.search;
+        if (PAGE_TOKEN.test(s)) { seen.add(s); }
+      }
+      return { total: anchors.length, targets: seen.size };
+    }
+    const PAGER_NAMED =
+      '.pagination,[class*="pagin"],[class*="pager"],[class*="page-list"],[class*="load-more"]';
+    function findPager() {
+      for (const el of document.querySelectorAll(PAGER_NAMED)) {
+        const cs = getComputedStyle(el);
+        if (cs.display === 'none' || cs.visibility === 'hidden') { continue; }
+        if (el.getBoundingClientRect().height <= 4) { continue; }
+        const p = pagedTargets(el);
+        if (p && p.targets >= 1) { return el; }
+      }
+      const cands = [];
+      for (const el of document.querySelectorAll('div,nav,ul,section')) {
+        const cs = getComputedStyle(el);
+        if (cs.display === 'none' || cs.visibility === 'hidden') { continue; }
+        if (el.getBoundingClientRect().height <= 4) { continue; }
+        const p = pagedTargets(el);
+        if (p && p.targets >= 3 && p.targets / p.total >= 0.5) { cands.push(el); }
+      }
+      const outer = cands.filter((c) => !cands.some((o) => o !== c && c.contains(o)));
+      return outer[0] || null;
+    }
+    function bestGrid() {
+      let best = null;
+      for (const g of document.querySelectorAll(GRID_SEL)) {
+        if (!renders(g)) { continue; }
+        const kids = Array.from(g.children);
+        if (kids.length < UNITS_MIN) { continue; }
+        const units = kids.filter(isUnit);
+        if (units.length < UNITS_MIN) { continue; }
+        if (rowsOf(g) < ROWS_MIN) { continue; }
+        const share = units.length / kids.length;
+        if (share < SHARE_MIN) { continue; }
+        if (!best || units.length > best.units.length) { best = { grid: g, units }; }
+      }
+      return best;
+    }
+    function qualify() {
+      const pager = findPager();
+      if (!pager) { return null; }
+      const best = bestGrid();
+      if (!best) { return null; }
+      if (best.grid.contains(pager)) { return null; }
+      return { grid: best.grid, units: best.units, pager };
+    }
+
+    function phIsWatchRoute() {
+      return WATCH_ROUTE.test(location.pathname);
+    }
+
+    /* Same scoring as qualify(), minus the pager requirement - a related
+       rail has no pagination to find. */
+    const qualifyWatch = bestGrid;
+
+    /* video.mgp_videoElement scoped to #player is the site's own main
+       player. The scope is not decoration: a stock watch page also renders
+       two 300x250/950x250 ad <video> elements with blob: sources outside
+       #player (measured 2026-09-15), and an unscoped "first big video"
+       search is exactly the defect that once marked an AD as the hero on
+       xnxx. */
+    function findPlayer() {
+      return document.querySelector('#player video.mgp_videoElement');
+    }
+
+    /* Mark #player (the outer .mainPlayerDiv box, 989x556) as the hero and
+       widen everything above it with the SAME markAncestors() the grid
+       uses - one full-bleed mechanism, not two. */
+    function markHero() {
+      const video = findPlayer();
+      if (!video) { return false; }
+      const outer = video.closest('#player');
+      if (!outer) { return false; }
+      outer.setAttribute(HERO_ATTR, '');
+      markAncestors(outer);
+      /* The site defaults the hero to muted (autoplay policy); a redesigned
+         watch page is a deliberate destination, so unmute it. Re-applied
+         every pass in case the site's own JS resets it. */
+      if (video.muted) { video.muted = false; }
+      return true;
+    }
+
+    const PH_STRIP_SEL =
+      'div.video-wrapper.modelInfo > div.title-container, ' +
+      'div.video-wrapper.modelInfo > div.video-actions-menu, ' +
+      'div.video-wrapper.modelInfo > div.video-actions-container';
+    function markStrip() {
+      for (const el of document.querySelectorAll(PH_STRIP_SEL)) {
+        el.setAttribute(STRIP_ATTR, '');
+      }
+    }
+
+    const OURS = [GRID_ATTR, ANC_ATTR, KEEP_ATTR, PAGER_ATTR, CARD_ATTR, HERO_ATTR, STRIP_ATTR];
+    function clearMarks() {
+      for (const attr of OURS) {
+        for (const el of document.querySelectorAll('[' + attr + ']')) { el.removeAttribute(attr); }
+      }
+      for (const el of document.querySelectorAll('[data-ph-info]')) { el.remove(); }
+    }
+    function markAncestors(grid) {
+      for (let n = grid.parentElement; n && n !== document.body; n = n.parentElement) {
+        n.setAttribute(ANC_ATTR, '');
+      }
+      if (document.body) { document.body.setAttribute(ANC_ATTR, ''); }
+    }
+
+    const TITLE_JUNK = /^[\d:.\s]+$/;
+    function readTitle(card) {
+      let attr = '';
+      let text = '';
+      for (const a of card.querySelectorAll('a[href*="' + UNIT_HREF + '"]')) {
+        const ta = (a.getAttribute('title') || '').trim();
+        if (ta && ta.indexOf('<') === -1 && !TITLE_JUNK.test(ta) && ta.length > attr.length) { attr = ta; }
+        const tt = (a.textContent || '').trim();
+        if (tt && tt.indexOf('<') === -1 && !TITLE_JUNK.test(tt) && /[a-zA-Z]/.test(tt) && tt.length > text.length) { text = tt; }
+      }
+      return attr ? { title: attr, src: 'attr' } : text ? { title: text, src: 'text' } : null;
+    }
+    /* NO SLUG FALLBACK, unlike xhamster. A pornhub watch URL is
+       /view_video.php?viewkey=<opaque key> - the path carries no words at
+       all, so a slug parse would produce "viewkey 6aa0af33d0a8c" rather
+       than a title. The card's own a.gtm-event-thumb-click carries the full
+       title in a title attribute (measured 2026-09-15) and img[alt] repeats
+       it; when neither is present the card simply ships without an overlay,
+       which is the same no-worse-than-stock failure the slug branch exists
+       to avoid elsewhere. */
+    function dressCard(card) {
+      const existing = card.querySelector(':scope > [data-ph-info]');
+      if (existing) {
+        if (existing.getAttribute('data-ph-tsrc') !== 'alt') { return; }
+        const better = readTitle(card);
+        if (better && better.src === 'attr') {
+          const node = existing.querySelector('[data-ph-title]');
+          if (node) { node.textContent = better.title; }
+          existing.setAttribute('data-ph-tsrc', better.src);
+        }
+        return;
+      }
+      let title = '';
+      let tsrc = 'alt';
+      const read = readTitle(card);
+      if (read) { title = read.title; tsrc = read.src; }
+      if (!title) {
+        const img = card.querySelector('img');
+        title = img ? (img.getAttribute('alt') || '').trim() : '';
+      }
+      if (!title) { return; }
+      const box = document.createElement('div');
+      box.setAttribute('data-ph-info', '');
+      box.setAttribute('data-ph-tsrc', tsrc);
+      const p = document.createElement('p');
+      p.setAttribute('data-ph-title', '');
+      p.textContent = title;
+      box.appendChild(p);
+      card.appendChild(box);
+    }
+
+    function markBar() {
+      const bar = document.querySelector(BAR_SEL);
+      if (!bar) { return; }
+      for (let n = bar; n && n !== document.body; n = n.parentElement) {
+        n.setAttribute(KEEP_ATTR, '');
+      }
+    }
+
+    /* THE WATCH ROUTE IS TESTED FIRST, and that is a deliberate deviation
+       from xhamster, which tries qualify() first and falls through. A
+       pornhub watch page renders a qualifying related wall AND carries
+       paginated controls of its own further down the page, so the gallery
+       branch could claim a watch page and redesign it without a player.
+       Testing the route first makes that impossible; the route is
+       unambiguous (/view_video.php serves nothing else). */
+    function apply(life) {
+      if (life.torn || L !== life) { return false; }
+
+      if (phIsWatchRoute()) {
+        const wq = qualifyWatch();
+        if (wq) {
+          adoptSheet();
+          clearMarks();
+          wq.grid.setAttribute(GRID_ATTR, '');
+          markAncestors(wq.grid);
+          markBar();
+          for (const u of wq.units) {
+            u.setAttribute(CARD_ATTR, '');
+            dressCard(u);
+          }
+          if (markHero()) {
+            markStrip();
+            root().setAttribute(WATCH_FLAG, '');
+            root().setAttribute(ROOT_FLAG, '');
+            return true;
+          }
+          /* A qualifying rail but no player - unwind exactly like a failed
+             gallery qualify(): no half-styled page. */
+          clearMarks();
+          dropSheet();
+        }
+      } else {
+        const q = qualify();
+        if (q) {
+          adoptSheet();
+          clearMarks();
+          q.grid.setAttribute(GRID_ATTR, '');
+          markAncestors(q.grid);
+          markBar();
+          q.pager.setAttribute(PAGER_ATTR, '');
+          for (let n = q.pager.parentElement; n && n !== document.body; n = n.parentElement) {
+            if (!n.hasAttribute(ANC_ATTR)) { n.setAttribute(ANC_ATTR, ''); }
+          }
+          for (const u of q.units) {
+            u.setAttribute(CARD_ATTR, '');
+            dressCard(u);
+          }
+          root().removeAttribute(WATCH_FLAG);
+          root().setAttribute(ROOT_FLAG, '');
+          return true;
+        }
+      }
+
+      if (root().hasAttribute(ROOT_FLAG)) {
+        clearMarks();
+        root().removeAttribute(ROOT_FLAG);
+        root().removeAttribute(TOP_ATTR);
+        root().removeAttribute(TOPFOCUS_ATTR);
+        root().removeAttribute(WATCH_FLAG);
+      }
+      return false;
+    }
+
+    const schedule = makeSchedule(getL, apply);
+    const sweep = makeSweep(getL, apply);
+
+    function start(life) {
+      if (life.torn || L !== life) { return; }
+      const opts = { signal: life.ac.signal };
+      apply(life);
+      life.mo = new MutationObserver(() => schedule(life));
+      life.mo.observe(root(), { childList: true, subtree: true });
+      document.addEventListener('pointermove', live(life, getL, topbar.onMove), { passive: true, ...opts });
+      document.documentElement.addEventListener('pointerleave', live(life, getL, () => topbar.topSet(false)),
+        { passive: true, ...opts });
+      document.addEventListener('keydown', live(life, getL, topbar.onKeydown), opts);
+      document.addEventListener('pointerdown', live(life, getL, (l) => { l.acted = true; }),
+        { passive: true, ...opts });
+      document.addEventListener('focusin', live(life, getL, topbar.syncFocus), { capture: true, ...opts });
+      document.addEventListener('focusout', live(life, getL, (l) => {
+        const t = setTimeout(() => topbar.syncFocus(l), 0);
+        l.ac.signal.addEventListener('abort', () => clearTimeout(t), { once: true });
+      }), { capture: true, ...opts });
+      window.addEventListener('popstate', live(life, getL, (l) => sweep(l, 6)), opts);
+      window.addEventListener('nx-locationchange', live(life, getL, (l) => sweep(l, 6)), opts);
+      window.addEventListener('resize', live(life, getL, (l) => schedule(l)), { passive: true, ...opts });
+      sweep(life, 6);
+    }
+
+    function teardown() {
+      if (boot) { boot.abort(); boot = null; }
+      const life = L;
+      L = null;
+      if (life) {
+        life.torn = true;
+        if (life.frame) { cancelAnimationFrame(life.frame); life.frame = 0; }
+        if (life.mo) { life.mo.disconnect(); life.mo = null; }
+        life.ac.abort();
+      }
+      clearMarks();
+      dropSheet();
+      const de = document.documentElement;
+      if (de) {
+        de.removeAttribute(ROOT_FLAG);
+        de.removeAttribute(TOP_ATTR);
+        de.removeAttribute(TOPFOCUS_ATTR);
+        de.removeAttribute(WATCH_FLAG);
+      }
+    }
+
+    if (typeof window[TEARDOWN] === 'function') {
+      try { window[TEARDOWN](); } catch { /* a previous copy's problem */ }
+    }
+    window[TEARDOWN] = teardown;
+
+    L = newLife();
+    boot = new AbortController();
+
+    whenReady(boot, function () {
+      const life = L;
+      if (!life || life.torn) { return; }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => start(life),
+          { once: true, signal: boot.signal });
+      } else {
+        start(life);
+      }
+    });
+  }
+
+  /* =========================================================================
      DISPATCH — one module runs per page, chosen by hostname. Matches the
      @match list above exactly: xhamster keeps its wildcard-subdomain
      match (xhamster-thumbwall shipped no evidence any subdomain other than
@@ -5814,5 +6452,7 @@ html[${WATCH_FLAG}] [class~="FYjf-gWsp-b"] { display: none !important; }
     runEporner();
   } else if (host === 'xhamster.com' || host.endsWith('.xhamster.com')) {
     runXhamster();
+  } else if (host === 'pornhub.com') {
+    runPornhub();
   }
 }());
