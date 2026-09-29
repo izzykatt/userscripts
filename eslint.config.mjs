@@ -146,9 +146,11 @@ export default [
     },
   },
 
-  // Repository tooling is Node, ESM, and not a userscript.
+  // Repository tooling is Node, ESM, and not a userscript. `.claude/hooks/*`
+  // are included deliberately: a hook that throws is a hook that silently stops
+  // guarding, and nothing else would ever lint them.
   {
-    files: ['scripts/**/*.mjs', 'eslint.config.mjs'],
+    files: ['scripts/**/*.mjs', '.claude/hooks/**/*.mjs', 'eslint.config.mjs'],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',

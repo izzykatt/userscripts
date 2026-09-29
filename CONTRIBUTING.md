@@ -4,6 +4,7 @@ Thanks for considering a contribution. This document is the whole working
 method — read the section that matches what you are doing.
 
 - [Quick start](#quick-start)
+- [The toolkit](#the-toolkit)
 - [Repository shape](#repository-shape)
 - [The metadata block](#the-metadata-block)
 - [Which fork does my script go to?](#which-fork-does-my-script-go-to)
@@ -15,22 +16,66 @@ method — read the section that matches what you are doing.
 
 ## Quick start
 
+With [Nix](https://determinate.systems/nix-installer/) — the pinned path, and
+the one CI mirrors:
+
 ```bash
 git clone https://github.com/izzykatt/userscripts.git
 cd userscripts
+nix develop          # every CLI, pinned by flake.lock
+lint                 # both gates
+```
+
+Without Nix, npm still works:
+
+```bash
 npm install          # devDependencies only — eslint and its userscript plugin
 npm run lint         # both gates
 ```
 
-There is **no build**. `npm install` exists solely to run the linters.
+There is **no build**. Either path exists solely to run the linters.
+
+## The toolkit
+
+`flake.nix` carries every command this repository's working method needs. Run
+them as `nix run .#<name>`, or bare inside `nix develop`.
+
+| Command | What it does |
+|---|---|
+| `lint` | eslint + meta-lint — the two gates CI requires |
+| `fix` | `eslint --fix` and `markdownlint --fix` |
+| `ci` | everything CI runs, in CI's order |
+| `bump <script> [patch\|minor\|major\|x.y.z]` | raise `@version` safely |
+| `publish-check <script>` | every pre-publish condition, as a checklist |
+| `new-script <name>` | scaffold a script + listing with the design rules wired in |
+| `check-versions` | `@version` monotonicity against `origin/main` |
+| `diagram [file]` | Mermaid → ASCII for `listings/*.md`, capped at 80 columns |
+| `link-check` | lychee over every `*.md` (**network**) |
+| `deps` | point `./node_modules` at the flake-pinned tree — no `npm install` |
+| `env-doctor` | which catalogued variables are set (names only, never values) |
+
+`nix flake check` runs every gate that works **offline**, in a sandbox: both
+publish gates plus `node --check`, actionlint + shellcheck over the workflows,
+typos, markdownlint, nixfmt, and a shellcheck pass over every command above.
+`.github/workflows/nix.yml` runs exactly that, so a green check locally means
+the same thing it means in CI.
+
+**ESLint is not pinned by Nix** — neither it nor `eslint-plugin-userscripts` is
+packaged in nixpkgs. It is still deterministic: `importNpmLock` builds
+`node_modules` straight from `package-lock.json` using the integrity hash
+already recorded there, so no step in this flake touches the network.
 
 ## Repository shape
 
-```
+```text
 .
 ├── <name>.user.js          one install unit per file, at the repo root
 ├── eslint.config.mjs       flat config, correctness + metadata rules
 ├── scripts/meta-lint.mjs   Greasy Fork publish-readiness checks
+├── listings/<name>.md      the script's Sleazy Fork listing body
+├── flake.nix               the whole toolchain: dev shell, commands, gates
+├── nix/mermaid-ascii.nix   vendored — it renders the listing diagrams
+├── .claude/                project rules, commands and hooks for Claude Code
 └── .github/workflows/      CI runs both gates on every PR
 ```
 
@@ -125,6 +170,9 @@ not stale documentation. Update the comment and the measurement together.
 Two gates, both run in CI on every pull request:
 
 ```bash
+nix run .#lint        # both gates
+nix run .#fix         # auto-fix what can be auto-fixed
+
 npm run lint:eslint   # correctness + metadata block validity
 npm run lint:meta     # Greasy Fork publish-readiness
 npm run lint          # both
@@ -136,7 +184,7 @@ alignment (`userscripts/align-attributes`) and requires a blank line before the
 code (`userscripts/metadata-spacing`). Both are mechanical and both auto-fix, so
 there is no reason to hand-align anything or to argue about it in review:
 
-```
+```text
 // ==UserScript==
 // @name         Example
 // @namespace    izzykatt.ca
@@ -179,7 +227,12 @@ set, the banned keys, the 500-character line cap, and version monotonicity.
 The repository is the source; the **Sleazy Fork listing is the install
 channel**, because only that copy carries an `@updateURL`.
 
-1. Bump `@version` and add the `CHANGELOG.md` entry.
+1. Bump `@version` with `nix run .#bump -- <script> [patch|minor|major|x.y.z]`
+   and add the `CHANGELOG.md` entry. The command preserves the metadata block's
+   alignment and refuses any number that does not clear `origin/main`.
+   Then run `nix run .#publish-check -- <script>`: it checks the version
+   against `origin/main`, the CHANGELOG entry, the listing file and the README
+   catalogue row in one pass.
 2. Write or update `listings/<script>.md` - the listing's Additional info body.
    Sleazy Fork requires a script to be properly described; an undisclosed
    behaviour is the most common reason a script is taken down.
