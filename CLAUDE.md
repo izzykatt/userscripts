@@ -102,6 +102,9 @@ fix                              # eslint --fix + markdownlint --fix
 bump <script> [patch|minor|major|x.y.z]   # the @version trap, mechanised
 publish-check <script>           # version, CHANGELOG, listing and README row in one pass
 new-script <name>                # scaffold a script + listing; passes all gates as generated
+browser [--violentmonkey]        # the pinned browser, project-local profile
+watch [--hot] [--violentmonkey]  # ^ plus the scripts injected, live on every save
+browser-bump [version]           # refresh the Chrome for Testing pin
 diagram [file]                   # mermaid -> ASCII for listings/*.md, capped at 80 columns
 check-versions                   # @version monotonicity vs origin/main
 deps                             # point ./node_modules at the flake-pinned tree
@@ -151,10 +154,56 @@ written into a live DOM attribute), `pagin` (a substring selector, `[class*="pag
 `contener` (the site's own misspelling in an id we have to match). Add a fourth only with the
 same kind of note.
 
+## The browser, and watching a script live
+
+**`nix run .#watch` is the loop.** It starts **Chrome for Testing 154.0.8037.57**, pinned in
+`nix/chrome-for-testing.nix` and never self-updating, against a **project-local profile** at
+`.nix-browser/profile` - so a debugger is never pointed at the operator's own session, cookies or
+history. Then it injects every `.user.js` over CDP and re-injects on save.
+
+```bash
+nix run .#watch                        # reload on save - faithful document-start
+nix run .#watch -- --hot               # swap in place, no reload - fast, less faithful
+nix run .#watch -- --violentmonkey     # a REAL install in Violentmonkey 2.49.0
+nix run .#watch -- --headless --port 9333   # for a scripted check
+```
+
+- **It attaches rather than launches** when something already answers CDP on the port, and then
+  leaves that browser running when it exits. A browser it started, it also kills.
+- **The default port is 9222**, which is the port `page-lab`'s `selector-verify.mjs` below
+  already expects - so `watch` and the measuring tools are the same browser.
+- **A save that does not parse never reaches the page.** `node --check` runs first; the error
+  prints and the browser keeps the last good version.
+- **`USERSCRIPTS_CHROME=/path/to/chrome`** overrides the pin when you need the browser you
+  actually have. Nothing else does - an installed browser self-updates, and then a measurement
+  note names a version that no longer exists.
+
+**Why CDP injection is faithful HERE.** `Page.addScriptToEvaluateOnNewDocument` runs before any
+page script on every navigation, which is what `@run-at document-start` means, and the `@match` /
+`@noframes` gates are compiled into the payload and evaluated in-page - so every other page is
+left stock, exactly as installed. What it cannot do is provide manager APIs. **Every script here
+is `@grant none`, so nothing is missing** - and if one ever grants something, `watch` refuses to
+inject it and tells you to use the Violentmonkey lane instead.
+
+**Two traps already paid for, both measured 2026-09-29:**
+
+- **`--hot` cannot exercise a document-start gate.** The page has already painted, so a theme or
+  pre-paint attribute gate has nothing to gate. Iterate in `--hot`; **sign off on a reload.**
+- **Registering against an already-open tab does nothing on its own.**
+  `addScriptToEvaluateOnNewDocument` affects the NEXT navigation only, so `watch` reloads every
+  page that was already open when it attached. Without that, the script is registered and not
+  running - a symptom indistinguishable from a dead selector.
+
+The Violentmonkey lane is the one that matches a reader exactly: a real install, the manager's
+own update path. It costs two one-time clicks per profile (Details -> *Allow access to file
+URLs*, then open the `.user.js` `file://` URL and tick **Track local file**). `--load-extension`
+was verified working on Chrome for Testing 154 despite the Chrome 137+ restriction elsewhere.
+
 ## Measuring the live page
 
 CONTRIBUTING.md says "measure first, never guess a selector" but does not say *with what*.
-Chromium runs with `--remote-debugging-port=9222`; page-lab ships the tooling:
+Chromium runs with `--remote-debugging-port=9222` - `nix run .#watch` is now the deterministic
+way to get one - and page-lab ships the tooling:
 
 ```bash
 pl=$(ls -d ~/.claude/plugins/cache/*/page-lab/*/scripts | tail -1)
@@ -189,16 +238,18 @@ it rather than eyeballing.
   silently after the session it was written in.
 
 **Opening the target page is the operator's action.** These are adult sites; an agent does not
-navigate the operator's browser there unasked. Ask for the tab, then measure it.
+navigate the operator's browser there unasked. Ask for the tab, then measure it. `nix run .#watch`
+deliberately opens **no URL** of its own for the same reason.
 
-**Injecting is not installing.** An agent cannot install, so it verifies by `eval`-ing the IIFE
-body via `Runtime.evaluate`. That differs from a real install in ways that produce **false
-failures**:
+**Injecting is not installing.** `nix run .#watch` now removes the first two of these - it
+strips the metadata block itself and registers at document-start - so they apply to a HAND-ROLLED
+`Runtime.evaluate` injection, which is what you fall back to when measuring one-off:
 
 - Strip the `// ==UserScript== … ==/UserScript==` block first - metadata, not JS.
 - These scripts are `@run-at document-start`. Injected at `readyState: complete` they run against
   a page that already painted, so a document-start gate (theme, pre-paint attribute on `<html>`)
-  has nothing to gate. Expect a flash the real install does not have.
+  has nothing to gate. Expect a flash the real install does not have. This is also exactly why
+  `watch --hot` is for iterating and a reload is for signing off.
 - Animations and transitions are still mid-flight on injection. **Poll until a measured value
   stops changing**; a fixed sleep races it, and two equal reads are not proof - require three.
 - Re-injection is exactly the double-injection case the teardown contract exists for, so it

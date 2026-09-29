@@ -48,6 +48,31 @@ Entries are grouped by script. Within a release, use the
   touched `.user.js`, and a stop gate that refuses to end a turn leaving a
   changed script red. `eslint.config.mjs` lints the hooks, because a hook that
   throws is a hook that has silently stopped guarding.
+- **A browser, pinned, with the scripts live on save.** `nix run .#watch` starts
+  **Chrome for Testing 154.0.8037.57** (`nix/chrome-for-testing.nix`) against a
+  project-local profile at `.nix-browser/profile`, injects every `.user.js` over
+  CDP, and re-injects on every save. `pkgs.chromium` is Linux-only in nixpkgs
+  and an installed browser self-updates, so neither could make "measured on
+  154.0.8037.57" a checkable claim; Chrome for Testing keeps every version at
+  its own immutable URL and never updates itself. `nix run .#browser-bump`
+  refreshes the pin from Google's last-known-good feed.
+  - Injection is `Page.addScriptToEvaluateOnNewDocument`, so it runs at
+    document-start on every navigation, with each script's `@match` and
+    `@noframes` gates compiled into the payload and evaluated in-page. Every
+    script here is `@grant none`, so nothing a manager provides is missing —
+    and `watch` refuses to inject one that grants anything.
+  - **A save that does not parse never reaches the page**: `node --check` runs
+    first, the error prints, and the browser keeps the last good version.
+  - `--hot` swaps into the live page with no reload, which also exercises the
+    teardown contract on every save. The default reloads instead, because an
+    already-painted page gives a document-start gate nothing to gate.
+  - `--violentmonkey` loads a pinned **Violentmonkey 2.49.0**
+    (`nix/violentmonkey.nix`) for the real install path. `--load-extension` was
+    verified working on Chrome for Testing 154 despite the Chrome 137+
+    restriction elsewhere.
+  - The unfree allowance for the browser is a **predicate naming that one
+    package**, not `allowUnfree` — a clone still gets a dev shell with no global
+    Nix configuration.
 - Markdown and spelling gates: `.markdownlint.jsonc` (with `listings/`,
   `.github/` and `.claude/` extending it for form bodies) and `_typos.toml`,
   whose three allowances are each a measured false positive — `anc` is an
@@ -75,8 +100,11 @@ Entries are grouped by script. Within a release, use the
 - `.gitignore` ignores `node_modules` without a trailing slash. The old
   `node_modules/` matched a **directory only**, so the symlink `nix run .#deps`
   creates was staged by git (measured 2026-09-28).
-- `eslint.config.mjs` also lints `.claude/hooks/**/*.mjs`. A hook that throws is
-  a hook that has silently stopped guarding, and nothing else would check them.
+- `eslint.config.mjs` also lints `.claude/hooks/**/*.mjs` and
+  `scripts/userscript-watch.mjs`. A hook that throws is a hook that has silently
+  stopped guarding, and nothing else would check them.
+- `.gitignore` covers `.nix-browser/` — the project-local browser profile, which
+  is hundreds of megabytes and holds cookies for whatever was under test.
 
 ## leolist-listings-only
 

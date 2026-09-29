@@ -154,7 +154,18 @@ export default [
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',
-      globals: { console: 'readonly', process: 'readonly', URL: 'readonly' },
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        URL: 'readonly',
+        // scripts/userscript-watch.mjs speaks CDP over Node 22's own global
+        // WebSocket and fetch — no dependency, so nothing is added to
+        // package-lock.json for it.
+        fetch: 'readonly',
+        WebSocket: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+      },
     },
     rules: {
       'no-unused-vars': 'error',
