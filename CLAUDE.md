@@ -371,12 +371,19 @@ The merge of previously separate scripts (xnxx 2.2.0, eporner 2.3.0, xhamster 1.
 file, following the standard multi-domain userscript pattern: shared runtime, a per-host module
 for each site's measured quirks, a dispatch table keyed on `location.hostname`.
 
-| Module | Hosts | Theme mechanism |
-|---|---|---|
-| `runXnxxXvideos()` | xnxx.com, xvideos.com | ~400-line hand-authored CSS palette overpaint |
-| `runEporner()` | eporner.com | JS computed-style luminance repaint (WCAG relative luminance) |
-| `runXhamster()` | xhamster.com + `*.xhamster.com` | the shared **engine kit** |
-| `runPornhub()` | pornhub.com | - |
+| Module | Hosts | Root flag when armed | Teardown global | Theme mechanism |
+|---|---|---|---|---|
+| `runXnxxXvideos()` | xnxx.com, xvideos.com | `data-nx-thumbwall` | `__nixXnxxTeardown` | ~400-line hand-authored CSS palette overpaint |
+| `runEporner()` | eporner.com | `data-ep-thumbwall` | `__nixEpornerTeardown` | JS computed-style luminance repaint (WCAG relative luminance) |
+| `runXhamster()` | xhamster.com + `*.xhamster.com` | `data-xh-thumbwall` | `__nixXhamsterTeardown` | the shared **engine kit** |
+| `runPornhub()` | pornhub.com | `data-ph-thumbwall` | `__nixPornhubTeardown` | - |
+
+**EVERY MODULE HAS ITS OWN ATTRIBUTE NAMESPACE** - `nx`, `ep`, `xh`, `ph` - and so does
+`leolist-listings-only` (`nix`). Checking one of them across all five hosts is how three working
+modules got written up as broken for twenty minutes (2026-09-29). `nix run .#verify` knows all
+five; if you check by hand, check the RIGHT one. Verified armed 2026-09-29 on
+`pornhub.com/video?o=mr` (106 marked nodes), `xhamster.com/newest` (153),
+`eporner.com/most-viewed/` (108) and `xnxx.com/best/2026-08` (1439).
 
 - **xnxx and eporner are carried forward VERBATIM** - byte-for-byte the gate, theme engine and
   purge rules that shipped as 2.2.0 and 2.3.0, each the product of field reports fixed under time
