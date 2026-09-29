@@ -99,6 +99,15 @@ Entries are grouped by script. Within a release, use the
     number it knows is short.
   - `nix run .#watch -- --scroll` runs a shorter sweep after each reload, so a
     save does not leave you looking at an unhydrated page.
+  - **`--gate '<gridSel>,<unitHref>'` says WHICH signal failed** when a script
+    declines to arm: grids matched, and per grid renders / kids / units / rows /
+    organic share, then whether a pager was found and whether it sits inside the
+    winning grid. It takes the constants rather than knowing them — thumbwall
+    alone has four modules with four sets, and `runXnxxXvideos()` and
+    `runEporner()` do not even share the shape, so the flag fits
+    `runPornhub()` and `runXhamster()` only. When it reports "all signals pass"
+    on a page that did not arm it says so: **suspect the replica, not the
+    script.**
   - **A page's own exception is not the script's.** An injected script has no
     source URL — it is `<anonymous>` to the debugger — while every site script
     has one. Without that split, eporner's own

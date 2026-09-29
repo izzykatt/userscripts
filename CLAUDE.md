@@ -178,6 +178,25 @@ attribute name because "armed" is not one bit: on leolist's homepage `data-nix-l
 present (theme, site-wide) and `data-nix-leolist-listings-only` is absent, and **both are
 correct**.
 
+**`--gate` answers "why not?" when a script declines.** It replays a grid-gallery gate signal by
+signal - grids matched, and per grid: renders / kids / units / rows / organic share - then whether
+a pager was found and whether it sits inside the winning grid.
+
+```bash
+nix run .#verify -- <url> --expect data-ph-thumbwall --gate 'ul.videos,/view_video.php'
+nix run .#verify -- <url> --expect data-xh-thumbwall --gate 'div.thumb-list,/videos/'
+```
+
+**It takes the constants rather than knowing them**, and it only fits the gate shape
+`runPornhub()` and `runXhamster()` share. `runXnxxXvideos()` and `runEporner()` are built
+differently - `.mozaique` plus a named `PAGER_SEL` - so the flag does not apply there. Read the
+constants out of the module and pass them; a built-in copy would be stale within the week.
+
+**If the replica disagrees with the script, the replica is wrong.** A gate reporting "all signals
+pass" while the script declines means wrong constants or a wrong `--expect` attribute - it printed
+exactly that on pornhub and xhamster while both were in fact arming under names I was not
+checking. `verify` says so on that line rather than letting you file a bug against working code.
+
 **The two scripts do not share a marker namespace.** `leolist-listings-only` writes
 `nix-leolist-*` and `data-nix-leolist-*`; `thumbwall` writes `nx-*` and `data-nx-thumbwall`.
 `verify` matches both by default and takes `--prefix` for a third - because a tool hardcoding one

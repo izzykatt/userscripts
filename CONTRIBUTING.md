@@ -53,6 +53,7 @@ them as `nix run .#<name>`, or bare inside `nix develop`.
 | `watch [--hot] [--violentmonkey]` | the same browser, with every script injected and re-injected on save |
 | `browser-bump [version]` | refresh the pinned Chrome for Testing |
 | `verify <url> [--expect <attr>]` | did the script run, throw, arm and hydrate on that page? |
+| `verify … --gate '<sel>,<href>'` | and if it declined, which gate signal failed |
 | `watch-status` / `watch-stop` | inspect or stop the loop the Claude Code hooks keep alive |
 | `diagram [file]` | Mermaid → ASCII for `listings/*.md`, capped at 80 columns |
 | `link-check` | lychee over every `*.md` (**network**) |

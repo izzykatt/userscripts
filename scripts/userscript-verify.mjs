@@ -3,6 +3,7 @@
 //
 //   node scripts/userscript-verify.mjs <url> [--expect <attr>] [--no-scroll]
 //                                          [--prefix nix-,nx-]
+//                                          [--gate '<gridSel>,<unitHref>']
 //
 // Four questions, in the order they matter:
 //
@@ -26,6 +27,25 @@
 // and scrolls an inner column, so a filmstrip of 759 photos read as ZERO until
 // a real wheel event drove the real scroller (2026-09-29). The wheel step is
 // not a nicety here; without it the answer is confidently wrong.
+//
+// --gate ANSWERS "WHY NOT?" WHEN A SCRIPT DECLINES. It replays a grid-gallery
+// gate signal by signal: how many grids the selector matches, and for each —
+// renders, child count, unit count, rows, organic share — then whether a pager
+// was found and whether it sits inside the winning grid.
+//
+// IT TAKES THE SELECTORS RATHER THAN KNOWING THEM. thumbwall alone has four
+// modules with four sets of constants, and not even the same variable names,
+// so a built-in copy would be stale the week after it was written. Read them
+// out of the script and pass them:
+//
+//   --gate 'ul.videos,/view_video.php'     (pornhub)
+//   --gate 'div.thumb-list,/videos/'       (xhamster)
+//
+// AND IF THE REPLICA DISAGREES WITH THE SCRIPT, THE REPLICA IS WRONG. A gate
+// reporting "all signals pass" while the script declines means the measurement
+// is off, not the script — which is exactly how three working thumbwall
+// modules got written up as broken (2026-09-29). Check the constants and the
+// --expect attribute before believing it.
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { connect, wheelUntilSettled } from './cdp.mjs';
@@ -147,6 +167,68 @@ const read = async () => JSON.parse(
   (await send('Runtime.evaluate', { expression: MARKERS, returnByValue: true }, sessionId)).result.value,
 );
 
+// ── the gate replica ─────────────────────────────────────────────────────────
+
+const gateSpec = opt('--gate', null);
+const gateExpr = (gridSel, unitHref, [unitsMin, rowsMin, shareMin]) => `(function(){
+  var GRID_SEL = ${JSON.stringify(gridSel)}, UNIT_HREF = ${JSON.stringify(unitHref)};
+  var UNITS_MIN = ${unitsMin}, ROWS_MIN = ${rowsMin}, SHARE_MIN = ${shareMin};
+  var renders = function(el){ var cs = getComputedStyle(el);
+    if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+    var r = el.getBoundingClientRect(); return r.width > 300 && r.height > 150; };
+  var isUnit = function(el){ return !!el.querySelector('a[href*="' + UNIT_HREF + '"]'); };
+  var rowsOf = function(el){ var ys = new Set();
+    for (var kid of el.children){ var r = kid.getBoundingClientRect(); if (r.height > 20) ys.add(Math.round(r.top/10)); }
+    return ys.size; };
+  var PAGE_TOKEN = /(?:[?&](?:p|page|from)=\\d+)|(?:\\/\\d{1,4}(?:\\/|$))|(?:-\\d{1,4}(?:\\/|$))/;
+  var pagedTargets = function(el){
+    var anchors = Array.from(el.querySelectorAll('a[href]'));
+    if (!anchors.length || anchors.length > 60) return null;
+    for (var a of anchors) if ((a.getAttribute('href')||'').includes(UNIT_HREF)) return null;
+    var seen = new Set();
+    for (var b of anchors){ var u; try { u = new URL(b.getAttribute('href')||'', location.href); } catch(e){ continue; }
+      var t = u.pathname + u.search; if (PAGE_TOKEN.test(t)) seen.add(t); }
+    return { total: anchors.length, targets: seen.size }; };
+  var PAGER_NAMED = '.pagination,[class*="pagin"],[class*="pager"],[class*="page-list"],[class*="load-more"]';
+  var named = 0, pager = null;
+  for (var el of document.querySelectorAll(PAGER_NAMED)) { named++;
+    var cs = getComputedStyle(el);
+    if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+    if (el.getBoundingClientRect().height <= 4) continue;
+    var p = pagedTargets(el); if (p && p.targets >= 1) { pager = el; break; } }
+  var fallback = 0;
+  if (!pager) { for (var e2 of document.querySelectorAll('div,nav,ul,section')) {
+    var c2 = getComputedStyle(e2);
+    if (c2.display === 'none' || c2.visibility === 'hidden') continue;
+    if (e2.getBoundingClientRect().height <= 4) continue;
+    var p2 = pagedTargets(e2);
+    if (p2 && p2.targets >= 3 && p2.targets / p2.total >= 0.5) fallback++; } }
+  var grids = Array.from(document.querySelectorAll(GRID_SEL));
+  var rows = grids.slice(0, 8).map(function(g){
+    var kids = Array.from(g.children), units = kids.filter(isUnit);
+    var share = kids.length ? units.length / kids.length : 0;
+    return { renders: renders(g), kids: kids.length, units: units.length, rows: rowsOf(g),
+             share: +share.toFixed(2),
+             passes: renders(g) && kids.length >= UNITS_MIN && units.length >= UNITS_MIN
+                     && rowsOf(g) >= ROWS_MIN && share >= SHARE_MIN }; });
+  var best = null;
+  for (var g3 of grids) {
+    var k3 = Array.from(g3.children), u3 = k3.filter(isUnit);
+    var s3 = k3.length ? u3.length / k3.length : 0;
+    if (!renders(g3) || k3.length < UNITS_MIN || u3.length < UNITS_MIN) continue;
+    if (rowsOf(g3) < ROWS_MIN || s3 < SHARE_MIN) continue;
+    if (!best || u3.length > best.n) best = { el: g3, n: u3.length }; }
+  return JSON.stringify({
+    gridSelMatches: grids.length, grids: rows,
+    pagerNamedCandidates: named, pagerFound: !!pager, pagerFallbackCandidates: fallback,
+    pagerInsideGrid: (best && pager) ? best.el.contains(pager) : null,
+    unitHrefsOnPage: document.querySelectorAll('a[href*="' + UNIT_HREF + '"]').length,
+    verdict: !pager ? 'no pager found'
+      : !best ? 'no grid passes unit/row/share'
+      : best.el.contains(pager) ? 'pager sits INSIDE the winning grid'
+      : 'all signals pass' });
+})()`;
+
 const before = await read();
 let wheel = null;
 if (!flag('--no-scroll')) {
@@ -198,6 +280,37 @@ console.log(
   `  ${ok(noBroken)}  images            ${after.images} total, ${after.decoded} decoded, ` +
     `${after.broken} broken, ${after.pending} pending`,
 );
+
+if (gateSpec) {
+  const [gridSel, unitHref] = gateSpec.split(',').map((x) => x.trim());
+  const th = String(opt('--gate-thresholds', '4,2,0.5')).split(',').map(Number);
+  if (!gridSel || !unitHref) {
+    console.log("  note  gate              --gate needs '<gridSelector>,<unitHref>' read from the script's own source");
+  } else {
+    const g = JSON.parse(
+      (await send('Runtime.evaluate', { expression: gateExpr(gridSel, unitHref, th), returnByValue: true }, sessionId))
+        .result.value,
+    );
+    console.log(`  note  gate              ${gridSel} + ${unitHref}  (units>=${th[0]} rows>=${th[1]} share>=${th[2]})`);
+    console.log(`        verdict           ${g.verdict}`);
+    console.log(`        grids matched     ${g.gridSelMatches}, passing ${g.grids.filter((r) => r.passes).length}`);
+    for (const r of g.grids) {
+      console.log(
+        `          ${r.passes ? 'pass' : '    '}  renders=${r.renders} kids=${r.kids} units=${r.units}` +
+          ` rows=${r.rows} share=${r.share}`,
+      );
+    }
+    console.log(
+      `        pager             found=${g.pagerFound} (named ${g.pagerNamedCandidates},` +
+        ` fallback ${g.pagerFallbackCandidates}), insideGrid=${g.pagerInsideGrid}`,
+    );
+    console.log(`        unit links        ${g.unitHrefsOnPage} matching ${unitHref}`);
+    if (g.verdict === 'all signals pass' && after.armed.length === 0) {
+      console.log('        SUSPECT THE REPLICA, NOT THE SCRIPT — a gate that passes while the');
+      console.log('        script declines means wrong constants or a wrong --expect attribute.');
+    }
+  }
+}
 
 const pass = ran && clean && noBroken && armedOk;
 
