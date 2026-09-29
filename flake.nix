@@ -842,8 +842,11 @@
             deps = [ nodejs ];
             text = ''
               if [ $# -lt 1 ]; then
-                echo "usage: verify <url> [--expect <html-attribute>] [--no-scroll] [--port N]" >&2
+                echo "usage: verify <url> [--expect <html-attribute>] [--no-scroll]" >&2
+                echo "              [--gate '<gridSel>,<unitHref>'] [--gate-thresholds u,r,s] [--port N]" >&2
                 echo "   eg: nix run .#verify -- https://example.com/ --expect data-nix-example" >&2
+                echo "       nix run .#verify -- <url> --expect data-ph-thumbwall \\" >&2
+                echo "             --gate 'ul.videos,/view_video.php'" >&2
                 exit 2
               fi
               exec node scripts/userscript-verify.mjs "$@"
@@ -916,6 +919,7 @@
                 browser [--violentmonkey]  pinned Chromium, project-local profile
                 watch [--hot] [--scroll] ^ plus live injection on save
                 verify <url>            did it run, throw, arm and hydrate?
+                  --gate 'sel,href'     ...and if it declined, WHICH signal failed
                 browser-bump [version]  refresh the pinned Chrome for Testing
                 watch-status            is the supervised watch loop up?
                 watch-stop              stop the loop the Claude hooks keep alive
