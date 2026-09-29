@@ -52,6 +52,7 @@ them as `nix run .#<name>`, or bare inside `nix develop`.
 | `browser [--violentmonkey]` | the pinned browser, on a project-local profile |
 | `watch [--hot] [--violentmonkey]` | the same browser, with every script injected and re-injected on save |
 | `browser-bump [version]` | refresh the pinned Chrome for Testing |
+| `watch-status` / `watch-stop` | inspect or stop the loop the Claude Code hooks keep alive |
 | `diagram [file]` | Mermaid → ASCII for `listings/*.md`, capped at 80 columns |
 | `link-check` | lychee over every `*.md` (**network**) |
 | `deps` | point `./node_modules` at the flake-pinned tree — no `npm install` |
@@ -87,6 +88,13 @@ Your own session, cookies and history are never inside this tool's reach.
 Injection is faithful because every script here is `@grant none` and registers
 at document-start. **Iterate with `--hot`; sign off on a reload** — an
 already-painted page gives a document-start gate nothing to gate.
+
+If you use Claude Code here, its hooks keep that loop running for you
+(`scripts/watch-daemon.mjs`): started at session start, revived after any
+`.user.js` edit and at the end of every turn, and left running when the session
+ends. `USERSCRIPTS_WATCH=0` turns it off. It only ever manages a browser **it
+started** — it will never attach to one already on the port, because that one is
+probably yours.
 
 ## Repository shape
 

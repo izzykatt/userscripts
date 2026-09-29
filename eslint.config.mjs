@@ -163,11 +163,16 @@ export default [
         // package-lock.json for it.
         fetch: 'readonly',
         WebSocket: 'readonly',
+        AbortController: 'readonly',
         setTimeout: 'readonly',
         clearTimeout: 'readonly',
       },
     },
     rules: {
+      // no-undef was ABSENT here until 2026-09-29, which meant a typo'd Node
+      // global in scripts/ or .claude/hooks/ passed lint and failed at runtime
+      // — in a hook, silently. The globals list above is the price of having it.
+      'no-undef': 'error',
       'no-unused-vars': 'error',
       'eqeqeq': ['error', 'smart'],
       'no-var': 'error',

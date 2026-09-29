@@ -73,6 +73,21 @@ Entries are grouped by script. Within a release, use the
   - The unfree allowance for the browser is a **predicate naming that one
     package**, not `allowUnfree` — a clone still gets a dev shell with no global
     Nix configuration.
+- **The loop stays up on its own.** `scripts/watch-daemon.mjs` supervises it from
+  Claude Code's hooks: started at session start, revived after any `.user.js`
+  edit and at the end of every turn, and left running when the session ends
+  (it detaches to PPID 1, so it outlives the hook that started it).
+  `nix run .#watch-status` and `nix run .#watch-stop` drive it by hand, and
+  `USERSCRIPTS_WATCH=0` switches the auto-start off.
+  - **It never attaches to a browser it did not start.** Typing `nix run .#watch`
+    attaches to whatever answers CDP on the port, which is right when a person
+    asks for it — but a hook doing the same would inject these scripts into
+    whatever Chromium happens to be on 9222, which on the maintainer's machine
+    is their own profile. The daemon tracks what it started in
+    `.nix-browser/watch.json` and declines by name otherwise.
+  - It also refuses to make session start wait on a 361 MB download:
+    `nix build --offline` answers "can this start right now?", and if not it says
+    so instead of fetching.
 - Markdown and spelling gates: `.markdownlint.jsonc` (with `listings/`,
   `.github/` and `.claude/` extending it for form bodies) and `_typos.toml`,
   whose three allowances are each a measured false positive — `anc` is an
@@ -100,9 +115,12 @@ Entries are grouped by script. Within a release, use the
 - `.gitignore` ignores `node_modules` without a trailing slash. The old
   `node_modules/` matched a **directory only**, so the symlink `nix run .#deps`
   creates was staged by git (measured 2026-09-28).
-- `eslint.config.mjs` also lints `.claude/hooks/**/*.mjs` and
-  `scripts/userscript-watch.mjs`. A hook that throws is a hook that has silently
-  stopped guarding, and nothing else would check them.
+- `eslint.config.mjs` also lints `.claude/hooks/**/*.mjs` and the watcher and
+  daemon in `scripts/`. A hook that throws is a hook that has silently stopped
+  guarding, and nothing else would check them.
+- **`no-undef` now applies to repository tooling and hooks.** It was absent from
+  that config block, so a typo'd Node global passed lint and failed at runtime —
+  inside a hook, silently. The explicit globals list is the price of having it.
 - `.gitignore` covers `.nix-browser/` — the project-local browser profile, which
   is hundreds of megabytes and holds cookies for whatever was under test.
 

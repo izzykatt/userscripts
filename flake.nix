@@ -828,6 +828,22 @@
             '';
           };
 
+          # The supervisor behind the Claude Code hooks, exposed so a person can
+          # drive it too. `ensure` is deliberately NOT an app: starting the loop
+          # by hand is what `watch` is for, and a command that silently declines
+          # would be a confusing thing to type.
+          watch-status = mk {
+            name = "watch-status";
+            deps = [ nodejs ];
+            text = "node scripts/watch-daemon.mjs status";
+          };
+
+          watch-stop = mk {
+            name = "watch-stop";
+            deps = [ nodejs ];
+            text = "node scripts/watch-daemon.mjs stop";
+          };
+
           browser-bump = mk {
             name = "browser-bump";
             deps = [
@@ -878,6 +894,8 @@
                 browser [--violentmonkey]  pinned Chromium, project-local profile
                 watch [--hot] [--violentmonkey]  ^ plus live injection on save
                 browser-bump [version]  refresh the pinned Chrome for Testing
+                watch-status            is the supervised watch loop up?
+                watch-stop              stop the loop the Claude hooks keep alive
 
                 diagram [file]          mermaid -> ASCII for listings/*.md (<=80 cols)
                 link-check              lychee over every *.md (NETWORK)
