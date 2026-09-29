@@ -25,6 +25,17 @@ try {
 const run = (cmd, args) =>
   execFileSync(cmd, args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 
+// Revive the live loop on EVERY turn, not only the turns that touched a
+// userscript — "stays running" has to survive a crash during a docs change too.
+// Idempotent, and the already-running path is a pid check plus one loopback
+// request. Never allowed to block a stop.
+try {
+  const out = run('node', ['scripts/watch-daemon.mjs', 'ensure']).trim();
+  if (out && !/already running/.test(out)) console.log(out);
+} catch {
+  /* the browser is a convenience; a clean stop is not */
+}
+
 let changed = [];
 try {
   changed = run('git', ['status', '--porcelain', '--', '*.user.js'])

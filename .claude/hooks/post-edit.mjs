@@ -64,3 +64,12 @@ if (problems.length) {
   console.error(problems.join('\n\n'));
   process.exit(2);
 }
+
+// The file is good, so make sure it is actually VISIBLE somewhere. `ensure` is
+// idempotent and the already-running path is a pid check plus one loopback
+// request, so this costs nothing on the common path.
+try {
+  console.log(run('node', ['scripts/watch-daemon.mjs', 'ensure']).trim());
+} catch {
+  /* the live loop is a convenience; never fail an edit over it */
+}

@@ -168,6 +168,23 @@ nix run .#watch -- --violentmonkey     # a REAL install in Violentmonkey 2.49.0
 nix run .#watch -- --headless --port 9333   # for a scripted check
 ```
 
+**THE HOOKS KEEP IT UP, so normally you never type it.** `scripts/watch-daemon.mjs ensure` runs
+at session start, after any `.user.js` edit, and at the end of every turn. It is idempotent, it
+survives the session that started it (PPID 1), and it restarts the loop if it died.
+
+```bash
+nix run .#watch-status    # is it up?
+nix run .#watch-stop      # take it down
+```
+
+Set `USERSCRIPTS_WATCH=0` (in `.envrc.local`) to switch the auto-start off entirely.
+
+**The daemon NEVER attaches to a browser it did not start.** Typing `nix run .#watch` yourself
+attaches to whatever answers CDP on the port - correct, because you asked for it. A hook doing
+the same thing would inject these scripts into whatever Chromium happens to be on 9222, which on
+this machine is the operator's own profile. So the daemon tracks what it started in
+`.nix-browser/watch.json` and declines with a reason otherwise.
+
 - **It attaches rather than launches** when something already answers CDP on the port, and then
   leaves that browser running when it exits. A browser it started, it also kills.
 - **The default port is 9222**, which is the port `page-lab`'s `selector-verify.mjs` below
