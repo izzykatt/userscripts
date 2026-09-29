@@ -2,6 +2,7 @@
 // Verify a userscript on a real page, in the browser `nix run .#watch` keeps up.
 //
 //   node scripts/userscript-verify.mjs <url> [--expect <attr>] [--no-scroll]
+//                                          [--prefix nix-,nx-]
 //
 // Four questions, in the order they matter:
 //
@@ -41,14 +42,25 @@ if (!url) {
   process.exit(2);
 }
 
+// THE MARKER NAMESPACE IS NOT ONE STRING. This repository has two: leolist
+// writes `nix-leolist-*` / `data-nix-leolist-*`, thumbwall writes `nx-*` /
+// `data-nx-*`. Hardcoding either one reports a clean "0 injected, not armed"
+// for the other script on every page it actually works on — which is the exact
+// shape of the false negative this command exists to stop. Override with
+// --prefix when a new script picks a third.
+const PREFIXES = String(opt('--prefix', 'nix-,nx-')).split(',').map((p) => p.trim()).filter(Boolean);
+const classSel = PREFIXES.map((p) => `[class*="${p}"]`).join(',');
+const imgSel = PREFIXES.map((p) => `img[class*="${p}"]`).join(',');
+const attrTest = PREFIXES.map((p) => `n.indexOf('data-${p}') === 0`).join(' || ');
+
 const MARKERS = `(function(){
-  var imgs = Array.from(document.querySelectorAll('img[class*="nix-"]'));
+  var imgs = Array.from(document.querySelectorAll('${imgSel}'));
   return JSON.stringify({
     url: location.href,
     ran: Object.getOwnPropertyNames(window).filter(function(k){ return /^__nix.*Teardown$/.test(k); }),
     armed: Array.from(document.documentElement.attributes).map(function(a){ return a.name; })
-             .filter(function(n){ return n.indexOf('data-nix') === 0; }),
-    injected: document.querySelectorAll('[class*="nix-"]').length,
+             .filter(function(n){ return ${attrTest}; }),
+    injected: document.querySelectorAll('${classSel}').length,
     images: imgs.length,
     decoded: imgs.filter(function(i){ return i.complete && i.naturalWidth > 0; }).length,
     // An <img> with no src yet reports complete === true and naturalWidth 0,
@@ -66,7 +78,7 @@ const MARKERS = `(function(){
 })()`;
 
 // Grows as lazy content hydrates; the wheel step stops when it stops growing.
-const MEASURE = `document.querySelectorAll('[class*="nix-"]').length + document.querySelectorAll('img[class*="nix-"]').length`;
+const MEASURE = `document.querySelectorAll('${classSel}').length + document.querySelectorAll('${imgSel}').length`;
 
 let version;
 try {
@@ -80,13 +92,21 @@ const { send, on, close } = await connect(version.webSocketDebuggerUrl);
 const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
 const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
 
+// An injected script has NO source URL — it is `<anonymous>` to the debugger —
+// while the site's own scripts all have one. Without that split, a page's own
+// error is blamed on the userscript: eporner's video preview throws
+// "AbortError: The play() request was interrupted" on its own, and verify
+// failed the script for it (measured 2026-09-29).
 const thrown = [];
+const pageThrown = [];
 on((msg) => {
   if (msg.sessionId !== sessionId) return;
-  if (msg.method === 'Runtime.exceptionThrown') {
-    const d = msg.params.exceptionDetails;
-    thrown.push((d.exception?.description || d.text || '').split('\n')[0]);
-  }
+  if (msg.method !== 'Runtime.exceptionThrown') return;
+  const d = msg.params.exceptionDetails;
+  const frame = d.stackTrace?.callFrames?.[0];
+  const ours = !d.url && !frame?.url;
+  const line = (d.exception?.description || d.text || '').split('\n')[0];
+  (ours ? thrown : pageThrown).push(line);
 });
 
 await send('Page.enable', {}, sessionId);
@@ -124,12 +144,16 @@ const expect = opt('--expect', null);
 const armedOk = !expect || after.armed.includes(expect);
 
 console.log(`verify ${after.url}`);
-console.log(`  scripts in tree   ${scripts.join(', ')}`);
+console.log(`  scripts in tree   ${scripts.join(', ')}   markers ${PREFIXES.join(' ')}`);
 console.log(`  ${ok(ran)}  ran               ${after.ran.join(', ') || '(no teardown global — the script never executed)'}`);
-console.log(`  ${ok(clean)}  threw nothing     ${thrown.slice(0, 3).join(' | ') || 'no exceptions'}`);
+console.log(`  ${ok(clean)}  threw nothing     ${thrown.slice(0, 3).join(' | ') || 'no exception from the injected script'}`);
+if (pageThrown.length) {
+  console.log(`  note  page's own errors ${pageThrown.length} (not the script's): ${pageThrown[0].slice(0, 80)}`);
+}
 console.log(
   `  ${expect ? ok(armedOk) : 'note'}  armed             ` +
-    (after.armed.join(', ') || 'no data-nix-* attribute — stock, which is the contract unless you expected otherwise'),
+    (after.armed.join(', ') ||
+      `no ${PREFIXES.map((x) => `data-${x}*`).join(' / ')} attribute — stock, which is the contract unless you expected otherwise`),
 );
 if (expect && !armedOk) console.log(`        expected          ${expect}`);
 if (wheel) {

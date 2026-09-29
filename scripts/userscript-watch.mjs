@@ -126,8 +126,12 @@ ${body}
 }
 
 /** Grows as lazy, viewport-gated content hydrates. Drives when to stop scrolling. */
+// Both marker namespaces this repository uses: leolist writes `nix-*`,
+// thumbwall writes `nx-*`. One prefix would silently measure nothing on the
+// other script's sites.
 const HYDRATION_MEASURE =
-  `document.querySelectorAll('[class*="nix-"]').length + document.querySelectorAll('img[class*="nix-"]').length`;
+  `document.querySelectorAll('[class*="nix-"],[class*="nx-"]').length` +
+  ` + document.querySelectorAll('img[class*="nix-"],img[class*="nx-"]').length`;
 
 /** Teardown every live copy, using this repository's own `__nix*Teardown` convention. */
 const TEARDOWN_SWEEP = `(function(){var n=0;

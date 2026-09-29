@@ -99,6 +99,15 @@ Entries are grouped by script. Within a release, use the
     number it knows is short.
   - `nix run .#watch -- --scroll` runs a shorter sweep after each reload, so a
     save does not leave you looking at an unhydrated page.
+  - **A page's own exception is not the script's.** An injected script has no
+    source URL — it is `<anonymous>` to the debugger — while every site script
+    has one. Without that split, eporner's own
+    "AbortError: The play() request was interrupted" failed the userscript that
+    had nothing to do with it.
+  - **It matches both marker namespaces.** `leolist-listings-only` writes
+    `nix-leolist-*`, `thumbwall` writes `nx-*` — a tool hardcoding one reports
+    a clean "0 injected, not armed" for the other on every page it works on.
+    `--prefix` covers a third.
 - **The loop stays up on its own.** `scripts/watch-daemon.mjs` supervises it from
   Claude Code's hooks: started at session start, revived after any `.user.js`
   edit and at the end of every turn, and left running when the session ends

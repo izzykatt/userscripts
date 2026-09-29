@@ -178,6 +178,12 @@ attribute name because "armed" is not one bit: on leolist's homepage `data-nix-l
 present (theme, site-wide) and `data-nix-leolist-listings-only` is absent, and **both are
 correct**.
 
+**The two scripts do not share a marker namespace.** `leolist-listings-only` writes
+`nix-leolist-*` and `data-nix-leolist-*`; `thumbwall` writes `nx-*` and `data-nx-thumbwall`.
+`verify` matches both by default and takes `--prefix` for a third - because a tool hardcoding one
+of them reports a clean "0 injected, not armed" for the other script on every page it actually
+works on, which is the exact false negative this command exists to stop.
+
 **`window.scrollTo` is the scroll-shaped version of `el.click()`.** leolist sets
 `html { overflow: hidden }` and scrolls its listing column, so `scrollTo` moved a number the page
 never heard about: `scrollY` stayed `0` through six attempts while an `IntersectionObserver`
