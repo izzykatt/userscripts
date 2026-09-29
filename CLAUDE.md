@@ -164,9 +164,26 @@ history. Then it injects every `.user.js` over CDP and re-injects on save.
 ```bash
 nix run .#watch                        # reload on save - faithful document-start
 nix run .#watch -- --hot               # swap in place, no reload - fast, less faithful
+nix run .#watch -- --scroll            # rehydrate lazy content after each reload
 nix run .#watch -- --violentmonkey     # a REAL install in Violentmonkey 2.49.0
-nix run .#watch -- --headless --port 9333   # for a scripted check
+
+nix run .#verify -- <url> --expect data-nix-leolist-listings-only
 ```
+
+**`verify` is the check, and its wheel-scroll step is the whole point.** It answers four
+questions in order: did the script **run**, did it **throw**, did it **arm**, and did the lazy
+content actually **hydrate**. Exit 1 on a script that never ran, threw, or left a broken image.
+Not arming is *not* a failure unless you name the attribute you expected - `--expect` takes the
+attribute name because "armed" is not one bit: on leolist's homepage `data-nix-leolist-dark` is
+present (theme, site-wide) and `data-nix-leolist-listings-only` is absent, and **both are
+correct**.
+
+**`window.scrollTo` is the scroll-shaped version of `el.click()`.** leolist sets
+`html { overflow: hidden }` and scrolls its listing column, so `scrollTo` moved a number the page
+never heard about: `scrollY` stayed `0` through six attempts while an `IntersectionObserver`
+waited for a scroll that never came, and a filmstrip of **759 photos measured as ZERO**. One
+dispatched wheel event took the same page from 29 images to 1201. Measured 2026-09-29. Use
+`Input.dispatchMouseEvent` with `type: "mouseWheel"`; never `window.scrollTo`.
 
 **THE HOOKS KEEP IT UP, so normally you never type it.** `scripts/watch-daemon.mjs ensure` runs
 at session start, after any `.user.js` edit, and at the end of every turn. It is idempotent, it

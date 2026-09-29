@@ -52,6 +52,7 @@ them as `nix run .#<name>`, or bare inside `nix develop`.
 | `browser [--violentmonkey]` | the pinned browser, on a project-local profile |
 | `watch [--hot] [--violentmonkey]` | the same browser, with every script injected and re-injected on save |
 | `browser-bump [version]` | refresh the pinned Chrome for Testing |
+| `verify <url> [--expect <attr>]` | did the script run, throw, arm and hydrate on that page? |
 | `watch-status` / `watch-stop` | inspect or stop the loop the Claude Code hooks keep alive |
 | `diagram [file]` | Mermaid → ASCII for `listings/*.md`, capped at 80 columns |
 | `link-check` | lychee over every `*.md` (**network**) |
@@ -88,6 +89,12 @@ Your own session, cookies and history are never inside this tool's reach.
 Injection is faithful because every script here is `@grant none` and registers
 at document-start. **Iterate with `--hot`; sign off on a reload** — an
 already-painted page gives a document-start gate nothing to gate.
+
+**Measure after a real scroll, never `window.scrollTo`.** A page that scrolls an
+inner column never hears about `scrollTo`, so anything behind an
+`IntersectionObserver` measures as absent. `nix run .#verify` dispatches real
+wheel events until hydration stops growing; `nix run .#watch -- --scroll` does a
+shorter sweep after each reload.
 
 If you use Claude Code here, its hooks keep that loop running for you
 (`scripts/watch-daemon.mjs`): started at session start, revived after any

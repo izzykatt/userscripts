@@ -28,6 +28,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, watch } from 'node:fs';
 import { basename, join } from 'node:path';
+import { wheelUntilSettled } from './cdp.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (name) => argv.includes(name);
@@ -40,6 +41,7 @@ const ROOT = process.env.PROJECT_ROOT || process.cwd();
 const PORT = Number(opt('--port', process.env.USERSCRIPTS_CDP_PORT || '9222'));
 const HOT = flag('--hot');
 const ONCE = flag('--once');
+const SCROLL = flag('--scroll');
 const explicit = argv.filter((a, i) => !a.startsWith('--') && argv[i - 1] !== '--port');
 
 const log = (...m) => console.log(`[watch] ${m.join(' ')}`);
@@ -122,6 +124,10 @@ ${body}
     wrapped,
   };
 }
+
+/** Grows as lazy, viewport-gated content hydrates. Drives when to stop scrolling. */
+const HYDRATION_MEASURE =
+  `document.querySelectorAll('[class*="nix-"]').length + document.querySelectorAll('img[class*="nix-"]').length`;
 
 /** Teardown every live copy, using this repository's own `__nix*Teardown` convention. */
 const TEARDOWN_SWEEP = `(function(){var n=0;
@@ -222,6 +228,22 @@ async function reinstall(bundle) {
         // is the only way the theme and pre-paint gates are actually exercised.
         await send('Page.reload', {}, sessionId);
         log(`reloaded ${s.url || '(tab)'}`);
+        if (SCROLL) {
+          // A reload lands at the top of an UNHYDRATED page. Anything gated on
+          // an IntersectionObserver — leolist's filmstrip, for one — is absent
+          // until something scrolls, and `window.scrollTo` does not count: the
+          // page scrolls an inner column and never hears about it. Drive the
+          // real scroller so the save you just made is actually on screen.
+          await new Promise((r) => setTimeout(r, 2500));
+          // Deliberately SHORTER than `verify`'s sweep: this runs on every
+          // save, so it refreshes what you are looking at rather than walking
+          // a hundred rows you are not.
+          const w = await wheelUntilSettled(send, sessionId, {
+            measure: HYDRATION_MEASURE,
+            maxRounds: 25,
+          });
+          log(`  hydrated ${w.before} -> ${w.after} over ${w.rounds} wheel round(s)`);
+        }
       }
     } catch (e) {
       warn(`session ${sessionId}: ${e.message}`);
@@ -348,7 +370,10 @@ if (ONCE) {
   process.exit(0);
 }
 
-log(`watching ${ROOT} — ${HOT ? 'HOT swap (no reload)' : 'reload on save (faithful document-start)'}`);
+log(
+  `watching ${ROOT} — ${HOT ? 'HOT swap (no reload)' : 'reload on save (faithful document-start)'}` +
+    (SCROLL ? ' + wheel-scroll to rehydrate' : ''),
+);
 
 let timer = null;
 watch(ROOT, (_event, filename) => {

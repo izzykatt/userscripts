@@ -275,6 +275,7 @@
             # assignment reads as dead to shellcheck (SC2034) and fails the
             # build of the command that does not use it.
             export HOT=""
+            export SCROLL=""
             HEADLESS=""
             CHROME_ARGS=()
             URLS=()
@@ -289,6 +290,10 @@
               --hot            watch only: swap the script into the live page with
                                no reload. Fast, but a document-start gate has
                                nothing to gate on an already-painted page.
+              --scroll         watch only: after each reload, drive a real wheel
+                               event until lazy content stops appearing. A reload
+                               lands on an UNHYDRATED page, so without this an
+                               IntersectionObserver-gated feature looks absent.
               --headless       run headless (--headless=new). For a scripted check;
                                you cannot judge a redesign you cannot see.
               --port N         CDP port (default 9222 - the port page-lab's
@@ -304,6 +309,7 @@
                 case "$1" in
                   --violentmonkey) vm=1; shift ;;
                   --hot) HOT=1; shift ;;
+                  --scroll) SCROLL=1; shift ;;
                   --headless) HEADLESS=1; shift ;;
                   --port) PORT="$2"; shift 2 ;;
                   -h | --help) _usage; exit 0 ;;
@@ -824,7 +830,23 @@
                 exit 1
               fi
 
-              node scripts/userscript-watch.mjs --port "$PORT" ''${HOT:+--hot}
+              node scripts/userscript-watch.mjs --port "$PORT" ''${HOT:+--hot} ''${SCROLL:+--scroll}
+            '';
+          };
+
+          # Does the script actually work on THIS page? Runs in the browser the
+          # watch loop already keeps up, and drives a real wheel event so lazy,
+          # viewport-gated content is measured rather than guessed at.
+          verify = mk {
+            name = "verify";
+            deps = [ nodejs ];
+            text = ''
+              if [ $# -lt 1 ]; then
+                echo "usage: verify <url> [--expect <html-attribute>] [--no-scroll] [--port N]" >&2
+                echo "   eg: nix run .#verify -- https://example.com/ --expect data-nix-example" >&2
+                exit 2
+              fi
+              exec node scripts/userscript-verify.mjs "$@"
             '';
           };
 
@@ -892,7 +914,8 @@
                 new-script <name>       scaffold a script + listing with the design rules
 
                 browser [--violentmonkey]  pinned Chromium, project-local profile
-                watch [--hot] [--violentmonkey]  ^ plus live injection on save
+                watch [--hot] [--scroll] ^ plus live injection on save
+                verify <url>            did it run, throw, arm and hydrate?
                 browser-bump [version]  refresh the pinned Chrome for Testing
                 watch-status            is the supervised watch loop up?
                 watch-stop              stop the loop the Claude hooks keep alive

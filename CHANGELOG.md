@@ -81,6 +81,24 @@ Entries are grouped by script. Within a release, use the
   - The unfree allowance for the browser is a **predicate naming that one
     package**, not `allowUnfree` — a clone still gets a dev shell with no global
     Nix configuration.
+- **`nix run .#verify -- <url>` — did the script run, throw, arm and hydrate?**
+  Exit 1 on a script that never ran, threw an exception, or left a broken image.
+  Not arming is *not* a failure unless you name what you expected: `--expect`
+  takes an HTML attribute, because "armed" is not one bit — on leolist's
+  homepage `data-nix-leolist-dark` is present and
+  `data-nix-leolist-listings-only` is absent, and both are correct. An
+  any-attribute check passed there and said nothing.
+  - **The wheel-scroll step is the reason it exists.** `window.scrollTo` is the
+    scroll-shaped version of `el.click()`: leolist sets `html {overflow:hidden}`
+    and scrolls its listing column, so `scrollTo` moved a number the page never
+    heard about — `scrollY` stayed `0` through six attempts while an
+    `IntersectionObserver` waited, and a filmstrip of **759 photos measured as
+    zero**. Dispatched wheel events took the same page from **29 images to
+    1201**. `scripts/cdp.mjs` carries the shared helper; it stops when
+    hydration stops growing, and says `STILL GROWING` rather than report a
+    number it knows is short.
+  - `nix run .#watch -- --scroll` runs a shorter sweep after each reload, so a
+    save does not leave you looking at an unhydrated page.
 - **The loop stays up on its own.** `scripts/watch-daemon.mjs` supervises it from
   Claude Code's hooks: started at session start, revived after any `.user.js`
   edit and at the end of every turn, and left running when the session ends
