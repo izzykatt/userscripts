@@ -63,9 +63,12 @@ Two scripts, both published on **Sleazy Fork**:
 | `thumbwall.user.js` | ~6.5k | pornhub · xvideos · xnxx · eporner · xhamster | 5.0.0 |
 | `leolist-listings-only.user.js` | ~3k | leolist.cc | 1.65.0 |
 
-No `flake.nix`, no `src/`, no `dist/`, no bundler, and **no nix consumer** - these install from
-their listings. Do not introduce a build step; it changes the security properties of the whole
-repository (see CONTRIBUTING.md § Repository shape).
+No `src/`, no `dist/`, no bundler. Do not introduce a build step; it changes the security
+properties of the whole repository (see CONTRIBUTING.md § Repository shape).
+
+There **is** a `flake.nix` (added 2026-09-28), and it is **not** a build step. It pins the tools
+that *check* the scripts and the maintenance commands around them; nothing it produces reaches a
+user, who still installs from the listing. The committed `.user.js` is still exactly what runs.
 
 ## Which fork - and which repo
 
@@ -89,11 +92,34 @@ A third repo, `gitlab.com/ismailkattakath/userscripts`, was the predecessor of b
 
 ## Commands
 
-Everything is an npm script; **nothing is on `PATH`** and there is no global binary to find:
+**The flake is the tool path.** `nix develop` puts every command below on `PATH`; outside it,
+`nix run .#<name>`. `nix run .#toolkit` lists them all.
+
+```bash
+nix develop                      # every CLI, pinned by flake.lock
+lint                             # BOTH gates - what CI requires
+fix                              # eslint --fix + markdownlint --fix
+bump <script> [patch|minor|major|x.y.z]   # the @version trap, mechanised
+publish-check <script>           # version, CHANGELOG, listing and README row in one pass
+new-script <name>                # scaffold a script + listing; passes all gates as generated
+diagram [file]                   # mermaid -> ASCII for listings/*.md, capped at 80 columns
+check-versions                   # @version monotonicity vs origin/main
+deps                             # point ./node_modules at the flake-pinned tree
+ci                               # everything CI runs, in CI's order
+nix flake check                  # every OFFLINE gate, sandboxed
+```
+
+**`bump` rather than editing the `@version` line by hand.** It preserves the metadata block's
+alignment and refuses any number that does not clear both the working copy and `origin/main` -
+which is the trap below, enforced instead of remembered.
+
+**Never run `npm install`.** `deps` builds `node_modules` from `package-lock.json` offline via
+`importNpmLock`, so nothing in this repo touches the network to lint. (`.claude/settings.json`
+denies `npm install` outright.) The npm scripts still work for a contributor without Nix:
 
 ```bash
 npm install            # devDependencies only - eslint + eslint-plugin-userscripts
-npm run lint           # BOTH gates - what CI runs
+npm run lint           # BOTH gates
 npm run lint:fix       # auto-fix first; metadata alignment is mechanical
 npm run lint:eslint    # correctness + metadata-block validity
 npm run lint:meta      # Greasy Fork publish-readiness (scripts/meta-lint.mjs)
@@ -112,12 +138,18 @@ this one runs in CI here, and only this one has the `--versions-against` check.
 **CI equivalent lives in this repo**: `.github/workflows/lint.yml` runs `eslint + meta` and a
 separate `node --check` job. Both are required checks on `main`.
 
-**Two configs are staged but not wired**: `.markdownlint.jsonc` / `.markdownlint-cli2.jsonc` and
-`_typos.toml` are present, but neither `markdownlint-cli2` nor `typos` is on `PATH` and neither
-runs in CI (verified 2026-09-28). The two npm gates are the only real gates today. If you edit
-Markdown, hold to the rules that config leaves **on** anyway - in particular **MD018**: a
-paragraph beginning `#main_list` renders as an `<h1>` on GitHub, so **backtick every selector**
-that starts with `#`.
+**Markdown and spelling are now wired**, as of 2026-09-28: `.markdownlint.jsonc` (extended by
+`listings/`, `.github/` and `.claude/`, each of which holds *form bodies* rather than documents)
+and `_typos.toml` both run inside `nix flake check`, and both CLIs are in the dev shell. The
+rules left **on** are the ones that catch things which actually render wrong - in particular
+**MD018**: a paragraph beginning `#main_list` renders as an `<h1>` on GitHub, because an ATX
+heading may interrupt a paragraph. **Backtick every selector that starts with `#`.** Four real
+instances of this were fixed in `CHANGELOG.md` the day the gate landed.
+
+`_typos.toml` allows exactly three words, each a measured false positive: `anc` (an abbreviation
+written into a live DOM attribute), `pagin` (a substring selector, `[class*="pagin"]`) and
+`contener` (the site's own misspelling in an id we have to match). Add a fourth only with the
+same kind of note.
 
 ## Measuring the live page
 
@@ -321,6 +353,10 @@ both checks green + threads resolved
   is reviewed and merged by a maintainer.
 - Required checks: `eslint + meta` and `node --check`. "Up to date with `main`" is deliberately
   **not** required.
+- `.github/workflows/nix.yml` runs `nix flake check` on every PR and is **deliberately not a
+  required check** - a Nix installer having a bad day must never block a one-line selector fix.
+  It is still the broader gate: it adds actionlint + shellcheck over the workflows, typos,
+  markdownlint, nixfmt and a shellcheck pass over every flake command.
 - Commit subject: `<script-name>: what changed`, e.g. `thumbwall: fix xhamster's new id scheme`.
   Repo-wide changes use a `ci:` / `docs:` / `lint:` scope. **Body explains *why*, with the
   measurement** - "what" is visible in the diff.
@@ -332,6 +368,10 @@ both checks green + threads resolved
 Follow **CONTRIBUTING.md** - § Adding a new script and § Publishing a script are the checklists,
 and the PR template's checklist is the review criteria. Three points an agent gets wrong:
 
+- **Run `publish-check` before you claim a script is ready.** `nix run .#publish-check -- <script>`
+  checks the version against `origin/main`, the CHANGELOG entry **inside that script's own
+  section**, the listing file and the README catalogue row, and prints an `ok`/`FAIL` line for
+  each. `/publish` walks the whole flow.
 - **An agent cannot install a script, flip a browser toggle, or post to Sleazy Fork.** Those
   clicks are the operator's. Ask; don't attempt.
 - **`listings/<script>.md` is the listing's "Additional info" body** and is mandatory - Sleazy

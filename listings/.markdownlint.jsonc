@@ -1,0 +1,18 @@
+// Overrides for listing bodies only. `extends` is load-bearing: without it
+// this file REPLACES the root rule set rather than adding to it.
+//
+// A file in this directory is NOT a document: it is the "Additional info" body
+// pasted into Sleazy Fork's listing form. Two default rules assume a document
+// and are wrong here.
+{
+  "extends": "../.markdownlint.jsonc",
+
+  // No H1. The listing's own title is the script name, rendered by the site
+  // above this body; a second top-level heading inside it duplicates it.
+  "MD041": false,
+
+  // The ASCII diagrams are fenced with NO language on purpose. Sleazy Fork
+  // renders a bare fence as <pre>, which is what preserves the box-drawing
+  // characters; tagging it `text` changes what the site emits.
+  "MD040": false
+}

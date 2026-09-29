@@ -1,0 +1,10 @@
+// Overrides for GitHub's own templates. `extends` is load-bearing: without it
+// this file REPLACES the root rule set rather than adding to it.
+{
+  "extends": "../.markdownlint.jsonc",
+
+  // An issue or pull-request template is a FORM BODY, not a document. GitHub
+  // renders the title above it, so a top-level heading inside would duplicate
+  // it — every template here opens at `##` on purpose.
+  "MD041": false
+}

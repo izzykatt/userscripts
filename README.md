@@ -1,6 +1,7 @@
 # userscripts
 
 [![lint](https://github.com/izzykatt/userscripts/actions/workflows/lint.yml/badge.svg)](https://github.com/izzykatt/userscripts/actions/workflows/lint.yml)
+[![nix](https://github.com/izzykatt/userscripts/actions/workflows/nix.yml/badge.svg)](https://github.com/izzykatt/userscripts/actions/workflows/nix.yml)
 [![licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 [![conventions: Greasy Fork](https://img.shields.io/badge/conventions-Greasy%20Fork-670000.svg)](https://greasyfork.org/help/code-rules)
 
@@ -68,6 +69,24 @@ something real.
 
 Per-script reasoning — the measured, dated evidence for why each selector and
 cascade trick is what it is — lives in that script's own header comments.
+
+## Developing
+
+One command, and the whole toolchain is pinned:
+
+```bash
+nix develop     # eslint, meta-lint, actionlint, typos, markdownlint, mermaid-ascii, gh
+toolkit         # list every maintenance command
+lint            # the two gates CI requires
+```
+
+`nix flake check` runs every gate that works offline, in a sandbox — the same
+set `.github/workflows/nix.yml` runs. There is still **no build step**, and
+there never will be; the flake pins the tools that *check* the scripts, not
+anything that transforms them.
+
+Without Nix, `npm install && npm run lint` covers the two publish gates. See
+[CONTRIBUTING.md § The toolkit](CONTRIBUTING.md#the-toolkit).
 
 ## Contributing
 

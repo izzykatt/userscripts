@@ -1,0 +1,28 @@
+# typos (crate-ci/typos) configuration.
+#
+# Every entry below is a MEASURED false positive, not a blanket mute. A word is
+# added here only after checking the line it fires on — see the note beside it.
+
+[files]
+extend-exclude = [
+  "node_modules/",
+  "package-lock.json", # generated; upstream package names are not ours to spell
+  ".direnv/",
+  "result",
+  "result-*",
+]
+
+[default.extend-words]
+# `WALL_ANC_ATTR = 'data-ep-wall-anc'` — ANC abbreviates ANCESTOR in an
+# attribute name that is written into the live DOM. Renaming it would change
+# the attribute, not a comment.
+anc = "anc"
+
+# `[class*="pagin"]` — a SUBSTRING attribute selector. The site's class is
+# `pagination`; matching on the stem is the whole point, and "paging" matches
+# nothing.
+pagin = "pagin"
+
+# `#content-ad-top-zone-contener` — the SITE's own misspelling, in the id we
+# have to select. Correcting it breaks the selector.
+contener = "contener"

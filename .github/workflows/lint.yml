@@ -28,7 +28,10 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          # Must match `nodejs_22` in flake.nix, so the npm path and the flake
+          # path run ESLint on the same runtime. Node 20 went end-of-life in
+          # April 2026 and eslint 10 wants ^20.19 || ^22.13 || >=24.
+          node-version: 22
           cache: npm
 
       - run: npm ci
