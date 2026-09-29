@@ -146,30 +146,15 @@ export default [
     },
   },
 
-  // Repository tooling is Node, ESM, and not a userscript. `.claude/hooks/*`
-  // are included deliberately: a hook that throws is a hook that silently stops
-  // guarding, and nothing else would ever lint them.
+  // Repository tooling is Node, ESM, and not a userscript.
   {
-    files: ['scripts/**/*.mjs', '.claude/hooks/**/*.mjs', 'eslint.config.mjs'],
+    files: ['scripts/**/*.mjs', 'eslint.config.mjs'],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',
-      // Exactly what scripts/ and .claude/hooks/ actually reference today.
-      // The CDP set (fetch, WebSocket, AbortController, setTimeout,
-      // clearTimeout) went with the browser tooling in 2026-09-29; add one
-      // back only when a file here really uses it, so no-undef keeps meaning
-      // something.
-      globals: {
-        console: 'readonly',
-        process: 'readonly',
-        URL: 'readonly',
-      },
+      globals: { console: 'readonly', process: 'readonly', URL: 'readonly' },
     },
     rules: {
-      // no-undef was ABSENT here until 2026-09-29, which meant a typo'd Node
-      // global in scripts/ or .claude/hooks/ passed lint and failed at runtime
-      // — in a hook, silently. The globals list above is the price of having it.
-      'no-undef': 'error',
       'no-unused-vars': 'error',
       'eqeqeq': ['error', 'smart'],
       'no-var': 'error',

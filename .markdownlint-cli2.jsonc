@@ -1,8 +1,0 @@
-// markdownlint-cli2 runner settings. The RULES live in `.markdownlint.jsonc`,
-// which cli2 picks up per-directory — that split is what lets
-// `listings/.markdownlint.jsonc` extend the root rule set instead of
-// replacing it.
-{
-  "globs": ["**/*.md"],
-  "ignores": ["node_modules", ".direnv", "result", "result-*"]
-}

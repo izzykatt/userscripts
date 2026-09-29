@@ -4,12 +4,10 @@ Thanks for considering a contribution. This document is the whole working
 method — read the section that matches what you are doing.
 
 - [Quick start](#quick-start)
-- [The toolkit](#the-toolkit)
 - [Repository shape](#repository-shape)
 - [The metadata block](#the-metadata-block)
 - [Which fork does my script go to?](#which-fork-does-my-script-go-to)
 - [The `@version` trap](#the-version-trap)
-- [Testing a change](#testing-a-change)
 - [Measure the live page — never guess a selector](#measure-the-live-page--never-guess-a-selector)
 - [Lint gates](#lint-gates)
 - [Adding a new script](#adding-a-new-script)
@@ -17,66 +15,22 @@ method — read the section that matches what you are doing.
 
 ## Quick start
 
-With [Nix](https://determinate.systems/nix-installer/) — the pinned path, and
-the one CI mirrors:
-
 ```bash
 git clone https://github.com/izzykatt/userscripts.git
 cd userscripts
-nix develop          # every CLI, pinned by flake.lock
-lint                 # both gates
-```
-
-Without Nix, npm still works:
-
-```bash
 npm install          # devDependencies only — eslint and its userscript plugin
 npm run lint         # both gates
 ```
 
-There is **no build**. Either path exists solely to run the linters.
-
-## The toolkit
-
-`flake.nix` carries every command this repository's working method needs. Run
-them as `nix run .#<name>`, or bare inside `nix develop`.
-
-| Command | What it does |
-|---|---|
-| `lint` | eslint + meta-lint — the two gates CI requires |
-| `fix` | `eslint --fix` and `markdownlint --fix` |
-| `ci` | everything CI runs, in CI's order |
-| `bump <script> [patch\|minor\|major\|x.y.z]` | raise `@version` safely |
-| `publish-check <script>` | every pre-publish condition, as a checklist |
-| `new-script <name>` | scaffold a script + listing with the design rules wired in |
-| `check-versions` | `@version` monotonicity against `origin/main` |
-| `diagram [file]` | Mermaid → ASCII for `listings/*.md`, capped at 80 columns |
-| `link-check` | lychee over every `*.md` (**network**) |
-| `deps` | point `./node_modules` at the flake-pinned tree — no `npm install` |
-| `env-doctor` | which catalogued variables are set (names only, never values) |
-
-`nix flake check` runs every gate that works **offline**, in a sandbox: both
-publish gates plus `node --check`, actionlint + shellcheck over the workflows,
-typos, markdownlint, nixfmt, and a shellcheck pass over every command above.
-`.github/workflows/nix.yml` runs exactly that, so a green check locally means
-the same thing it means in CI.
-
-**ESLint is not pinned by Nix** — neither it nor `eslint-plugin-userscripts` is
-packaged in nixpkgs. It is still deterministic: `importNpmLock` builds
-`node_modules` straight from `package-lock.json` using the integrity hash
-already recorded there, so no step in this flake touches the network.
+There is **no build**. `npm install` exists solely to run the linters.
 
 ## Repository shape
 
-```text
+```
 .
 ├── <name>.user.js          one install unit per file, at the repo root
 ├── eslint.config.mjs       flat config, correctness + metadata rules
 ├── scripts/meta-lint.mjs   Greasy Fork publish-readiness checks
-├── listings/<name>.md      the script's Sleazy Fork listing body
-├── flake.nix               the whole toolchain: dev shell, commands, gates
-├── nix/mermaid-ascii.nix   vendored — it renders the listing diagrams
-├── .claude/                project rules, commands and hooks for Claude Code
 └── .github/workflows/      CI runs both gates on every PR
 ```
 
@@ -152,75 +106,16 @@ Pick the right one up front. Record which in the README catalogue table.
 
 CI fails a PR that changes a `.user.js` without raising its `@version`.
 
-## Testing a change
-
-**The only channel into a page is a real userscript install**, in the browser
-this repository is developed against:
-
-| | what is used |
-|---|---|
-| browser | ungoogled-chromium **152.0.7977.64** |
-| manager | **Violentmonkey 2.48.0**, installed from the Chrome Web Store |
-| profile | the developer's own |
-
-There is no headless lane and no DevTools-Protocol lane. A change is tested by
-installing it — edit the `.user.js`, raise `@version`, reload it in Violentmonkey,
-open the target page, and look.
-
-**Raise `@version` or you are testing the old code.** Violentmonkey never
-downgrades, and a same-version reinstall is a silent no-op with nothing anywhere
-saying so. See [The `@version` trap](#the-version-trap).
-
-**Make the script answer the question.** When something needs counting — how many
-nodes a selector matched, which gate signal failed, what URL was fetched — have
-the script compute it and `console.log` it behind a debug flag that ships off,
-rather than inspecting the DOM by hand. It is faster, it is repeatable, and it
-scores the selector in the exact browser that will run it.
-
-### Reloading without a reinstall each round
-
-One-time setup in Violentmonkey:
-
-1. Chromium → Extensions → Violentmonkey → **Details** → *Allow access to file
-   URLs*.
-2. Open the `.user.js` as a `file://` URL and install it.
-3. In the script's settings, tick **Track local file**.
-
-Violentmonkey then picks the file up on save.
-
-### Two things that are not your bug
-
-**A real scroll, never `window.scrollTo`.** A page that scrolls an inner column
-never hears about `scrollTo`, so anything behind an `IntersectionObserver`
-measures as absent — leolist read a 759-photo filmstrip as ZERO that way. You
-scroll with an actual wheel here, so this is a rule for code that *synthesises*
-scrolling, not for testing.
-
-**Check the page scrolls at all before blaming your own feature.** Measured
-2026-09-29: xhamster ships `body.xh-scroll-disabled` (`overflow-y: hidden`) on a
-clean profile with no dialog behind it, and pornhub holds
-`scrollHeight === innerHeight` behind its age modal. Both are identical with a
-script running and with it torn down, so neither is the script's doing.
-
 ## Measure the live page — never guess a selector
 
 A selector that was not verified against the live page is a guess, and guesses
 rot silently. Before you write one:
 
 1. Open the target page **with every userscript disabled** — otherwise you are
-   measuring your own output, not the site. (Each script's teardown global,
-   documented in its header, tears it down without uninstalling.)
-2. Confirm your selector matches **exactly** the node count you intend, by
-   logging the count from the script itself.
-3. Confirm it does not rely on a **generated class name** (`searchSubmit-e1b81`,
-   `root-f87d5`) — anchor on ARIA roles, `href` values and data attributes.
-4. Confirm it does not rely on **`aria-label` or on link text**. Both are
-   localised, so either matches nothing on a non-English UI. Setting
-   `aria-label` on a node *you* create is fine and expected.
-5. Note the date **and the browser version** you measured in the script's header
-   comment.
-6. **Break the selector on purpose** and confirm the page renders stock. That is
-   the test that proves the failure mode, and it needs no tooling at all.
+   measuring your own output, not the site.
+2. Confirm your selector matches **exactly** the node count you intend.
+3. Confirm it does not rely on a generated class name.
+4. Note the date you measured in the script's header comment.
 
 A header comment asserting behaviour the code does not perform is a **defect**,
 not stale documentation. Update the comment and the measurement together.
@@ -230,9 +125,6 @@ not stale documentation. Update the comment and the measurement together.
 Two gates, both run in CI on every pull request:
 
 ```bash
-nix run .#lint        # both gates
-nix run .#fix         # auto-fix what can be auto-fixed
-
 npm run lint:eslint   # correctness + metadata block validity
 npm run lint:meta     # Greasy Fork publish-readiness
 npm run lint          # both
@@ -244,7 +136,7 @@ alignment (`userscripts/align-attributes`) and requires a blank line before the
 code (`userscripts/metadata-spacing`). Both are mechanical and both auto-fix, so
 there is no reason to hand-align anything or to argue about it in review:
 
-```text
+```
 // ==UserScript==
 // @name         Example
 // @namespace    izzykatt.ca
@@ -287,12 +179,7 @@ set, the banned keys, the 500-character line cap, and version monotonicity.
 The repository is the source; the **Sleazy Fork listing is the install
 channel**, because only that copy carries an `@updateURL`.
 
-1. Bump `@version` with `nix run .#bump -- <script> [patch|minor|major|x.y.z]`
-   and add the `CHANGELOG.md` entry. The command preserves the metadata block's
-   alignment and refuses any number that does not clear `origin/main`.
-   Then run `nix run .#publish-check -- <script>`: it checks the version
-   against `origin/main`, the CHANGELOG entry, the listing file and the README
-   catalogue row in one pass.
+1. Bump `@version` and add the `CHANGELOG.md` entry.
 2. Write or update `listings/<script>.md` - the listing's Additional info body.
    Sleazy Fork requires a script to be properly described; an undisclosed
    behaviour is the most common reason a script is taken down.

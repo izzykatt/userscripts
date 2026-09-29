@@ -1,19 +1,8 @@
 # Dependencies — devDependencies only; there is no runtime dependency and no build.
-#
-# NO TRAILING SLASH, deliberately. `node_modules/` matches a DIRECTORY only, and
-# `nix run .#deps` replaces this with a SYMLINK into the Nix store — which that
-# pattern does not match, so git staged the link. Measured 2026-09-28.
-node_modules
+node_modules/
 
 # Lint / tool caches
 .eslintcache
-
-# Nix
-# `result` is a build symlink; `.direnv/` is direnv's cached dev shell. Both are
-# regenerated from flake.nix + flake.lock, which ARE committed.
-result
-result-*
-.direnv/
 
 # Editor and OS noise
 .DS_Store
@@ -23,14 +12,9 @@ Thumbs.db
 *.swp
 
 # Local environment
-# `.envrc` is COMMITTED (it holds the load order, never a value); `.envrc.local`
-# is the per-operator file and must never be. The `.env*` glob below would
-# otherwise swallow `.envrc` too.
 .env
 .env.*
 !.env.example
-!.envrc
-.envrc.local
 
 # There is NO build output in this repository. If you find yourself adding a
 # dist/ ignore, stop and open an issue first — a build step changes what a
