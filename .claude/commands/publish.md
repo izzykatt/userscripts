@@ -30,6 +30,11 @@ what you need, rather than working around it.
 5. **Run the gates.** `nix run .#lint`, then
    `nix run .#publish-check -- $1`. Every line must read `ok`.
 
+   Then check it on a real page:
+   `nix run .#verify -- <a page the script targets> --expect <its html attribute>`
+   That drives a real wheel event, so lazy content is measured rather than
+   assumed absent.
+
 6. **Exercise the site's primary actions** in a browser before you call it
    done. Geometry proves a control is *present*, never that it *works* — and
    it must work under a **trusted** event (CDP `Input.dispatchMouseEvent`, not
