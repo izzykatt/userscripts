@@ -49,6 +49,9 @@ them as `nix run .#<name>`, or bare inside `nix develop`.
 | `publish-check <script>` | every pre-publish condition, as a checklist |
 | `new-script <name>` | scaffold a script + listing with the design rules wired in |
 | `check-versions` | `@version` monotonicity against `origin/main` |
+| `browser [--violentmonkey]` | the pinned browser, on a project-local profile |
+| `watch [--hot] [--violentmonkey]` | the same browser, with every script injected and re-injected on save |
+| `browser-bump [version]` | refresh the pinned Chrome for Testing |
 | `diagram [file]` | Mermaid → ASCII for `listings/*.md`, capped at 80 columns |
 | `link-check` | lychee over every `*.md` (**network**) |
 | `deps` | point `./node_modules` at the flake-pinned tree — no `npm install` |
@@ -64,6 +67,26 @@ the same thing it means in CI.
 packaged in nixpkgs. It is still deterministic: `importNpmLock` builds
 `node_modules` straight from `package-lock.json` using the integrity hash
 already recorded there, so no step in this flake touches the network.
+
+### Trying a script in a browser
+
+```bash
+nix run .#watch                      # pinned Chromium + every script, live on save
+nix run .#watch -- --hot             # swap in place with no reload, for iterating
+nix run .#watch -- --violentmonkey   # a real install, the way a reader runs it
+```
+
+`nix/chrome-for-testing.nix` pins **Chrome for Testing 154.0.8037.57**, which
+never self-updates — so "measured on 154.0.8037.57" stays a checkable claim.
+`pkgs.chromium` is Linux-only in nixpkgs, and an installed browser updates out
+from under a measurement; this is the version everyone gets.
+
+The profile lives at `.nix-browser/profile`, **project-local and gitignored**.
+Your own session, cookies and history are never inside this tool's reach.
+
+Injection is faithful because every script here is `@grant none` and registers
+at document-start. **Iterate with `--hot`; sign off on a reload** — an
+already-painted page gives a document-start gate nothing to gate.
 
 ## Repository shape
 

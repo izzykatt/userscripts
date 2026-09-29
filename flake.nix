@@ -40,7 +40,28 @@
         "aarch64-linux"
         "x86_64-linux"
       ];
-      forAll = f: lib.genAttrs systems (system: f system nixpkgs.legacyPackages.${system});
+      # A NARROW unfree allowance, never a blanket one. Chrome for Testing is a
+      # Google binary under Chrome's terms, so nixpkgs refuses it by default —
+      # and a public repository must not require a contributor to set
+      # allowUnfree globally just to get a dev shell. The predicate names
+      # exactly one package; everything else stays refused, google-chrome
+      # included.
+      pkgsFor =
+        system:
+        import nixpkgs {
+          inherit system;
+          config.allowUnfreePredicate = p: lib.getName p == "chrome-for-testing";
+        };
+      forAll = f: lib.genAttrs systems (system: f system (pkgsFor system));
+
+      # Packages that are not commands. They stay out of `apps`, and `browser`
+      # stays out of `checks` too — it is a 361 MB download, and a gate that
+      # fetches a browser is not a gate anybody runs twice.
+      nonApps = [
+        "mermaid-ascii"
+        "chromium"
+        "violentmonkey"
+      ];
 
       # ── Env catalogue ────────────────────────────────────────────────────
       # This repository reads NO environment variable at runtime — the scripts
@@ -169,6 +190,17 @@
 
           mermaid-ascii = pkgs.callPackage ./nix/mermaid-ascii.nix { };
 
+          # Google publishes Chrome for Testing for mac-arm64, mac-x64 and
+          # linux64 — and NOT for aarch64-linux, where nixpkgs' own chromium
+          # does build. One name, the best available build behind it.
+          chromiumPkg =
+            if system == "aarch64-linux" then
+              pkgs.chromium
+            else
+              pkgs.callPackage ./nix/chrome-for-testing.nix { };
+
+          violentmonkeyPkg = pkgs.callPackage ./nix/violentmonkey.nix { };
+
           # The trailing newline is load-bearing: `while IFS= read` drops a
           # final line that has none, which silently hid the last variable.
           envTsvFile = pkgs.writeText "userscripts-env-catalogue.tsv" (envTsv + "\n");
@@ -227,6 +259,94 @@
             }
           '';
 
+          # Shared by `browser` and `watch` so the two can never disagree about
+          # which binary, which profile or which port.
+          browserPrelude = ''
+            PORT="''${USERSCRIPTS_CDP_PORT:-9222}"
+            PROFILE="''${USERSCRIPTS_PROFILE:-$PRJ/.nix-browser/profile}"
+            # USERSCRIPTS_CHROME is the escape hatch for "test it on the browser
+            # I actually have". It is NOT the default, because an installed
+            # browser self-updates, and then no measurement note can name a
+            # version that still exists.
+            BROWSER_BIN="''${USERSCRIPTS_CHROME:-${lib.getExe chromiumPkg}}"
+            VM_DIR="${violentmonkeyPkg}"
+            # `export`, for the same reason the main prelude exports: `browser`
+            # and `watch` share this file and only `watch` reads HOT, so a plain
+            # assignment reads as dead to shellcheck (SC2034) and fails the
+            # build of the command that does not use it.
+            export HOT=""
+            HEADLESS=""
+            CHROME_ARGS=()
+            URLS=()
+
+            _usage() {
+              cat <<'USAGE'
+            usage: <command> [--violentmonkey] [--hot] [--port N] [--] [url ...]
+
+              --violentmonkey  load the pinned Violentmonkey and verify the way a
+                               READER runs it - a real install, with the manager's
+                               own update path. Two one-time clicks per profile.
+              --hot            watch only: swap the script into the live page with
+                               no reload. Fast, but a document-start gate has
+                               nothing to gate on an already-painted page.
+              --headless       run headless (--headless=new). For a scripted check;
+                               you cannot judge a redesign you cannot see.
+              --port N         CDP port (default 9222 - the port page-lab's
+                               selector-verify.mjs already expects).
+
+            env: USERSCRIPTS_CHROME, USERSCRIPTS_PROFILE, USERSCRIPTS_CDP_PORT
+            USAGE
+            }
+
+            _parse_browser_args() {
+              local vm=0
+              while [ $# -gt 0 ]; do
+                case "$1" in
+                  --violentmonkey) vm=1; shift ;;
+                  --hot) HOT=1; shift ;;
+                  --headless) HEADLESS=1; shift ;;
+                  --port) PORT="$2"; shift 2 ;;
+                  -h | --help) _usage; exit 0 ;;
+                  --) shift; URLS+=("$@"); break ;;
+                  -*) echo "unknown option: $1" >&2; _usage >&2; exit 2 ;;
+                  *) URLS+=("$1"); shift ;;
+                esac
+              done
+              CHROME_ARGS=(
+                --user-data-dir="$PROFILE"
+                --remote-debugging-port="$PORT"
+                --no-first-run
+                --no-default-browser-check
+              )
+              # --headless=new, never the old --headless: the old one is a
+              # separate, thinner implementation whose rendering and extension
+              # support differ from the browser a reader actually runs.
+              [ -n "$HEADLESS" ] && CHROME_ARGS+=(--headless=new)
+              if [ "$vm" = 1 ]; then
+                CHROME_ARGS+=(--disable-extensions-except="$VM_DIR" --load-extension="$VM_DIR")
+                echo "[browser] Violentmonkey $VM_DIR"
+                echo "[browser] one-time, per profile: chrome://extensions -> Violentmonkey ->"
+                echo "[browser]   Details -> Allow access to file URLs, then open the .user.js"
+                echo "[browser]   file:// URL and tick 'Track local file' on the install page."
+              fi
+            }
+
+            _prepare_profile() {
+              # A PROJECT-LOCAL profile, always. These scripts target adult sites;
+              # pointing a debugger at the operator's real profile would put their
+              # own session, cookies and history inside this tool's blast radius.
+              mkdir -p "$PROFILE"
+            }
+
+            _refuse_if_port_busy() {
+              if curl -fsS --max-time 1 "http://127.0.0.1:$PORT/json/version" >/dev/null 2>&1; then
+                echo "something is already answering CDP on $PORT." >&2
+                echo "attach to it with 'nix run .#watch', or pick another --port." >&2
+                exit 1
+              fi
+            }
+          '';
+
           mk =
             {
               name,
@@ -250,6 +370,8 @@
         in
         {
           inherit mermaid-ascii;
+          chromium = chromiumPkg;
+          violentmonkey = violentmonkeyPkg;
 
           # ── The two publish gates ──────────────────────────────────────
           lint = mk {
@@ -655,6 +777,89 @@
             '';
           };
 
+          # ── The browser ────────────────────────────────────────────────
+          browser = mk {
+            name = "browser";
+            deps = [ pkgs.curl ];
+            text = browserPrelude + ''
+              _parse_browser_args "$@"
+              _refuse_if_port_busy
+              _prepare_profile
+              echo "[browser] $BROWSER_BIN"
+              echo "[browser] profile $PROFILE (project-local - your real browsing is untouched)"
+              echo "[browser] CDP on http://127.0.0.1:$PORT"
+              exec "$BROWSER_BIN" "''${CHROME_ARGS[@]}" "''${URLS[@]}"
+            '';
+          };
+
+          watch = mk {
+            name = "watch";
+            deps = [
+              nodejs
+              pkgs.curl
+            ];
+            text = browserPrelude + ''
+              _parse_browser_args "$@"
+              _prepare_profile
+
+              if curl -fsS --max-time 1 "http://127.0.0.1:$PORT/json/version" >/dev/null 2>&1; then
+                echo "[watch] attaching to the browser already on $PORT (it stays up when this exits)"
+              else
+                mkdir -p "$PRJ/.nix-browser"
+                "$BROWSER_BIN" "''${CHROME_ARGS[@]}" "''${URLS[@]}" \
+                  >"$PRJ/.nix-browser/chrome.log" 2>&1 &
+                owned=$!
+                # This command OWNS the browser it started, so Ctrl-C takes it
+                # down too. A browser we merely attached to is left alone.
+                # shellcheck disable=SC2064
+                trap "kill $owned 2>/dev/null || true" EXIT
+                for _ in $(seq 1 60); do
+                  curl -fsS --max-time 1 "http://127.0.0.1:$PORT/json/version" >/dev/null 2>&1 && break
+                  sleep 0.25
+                done
+              fi
+
+              if ! curl -fsS --max-time 1 "http://127.0.0.1:$PORT/json/version" >/dev/null 2>&1; then
+                echo "[watch] the browser never opened its CDP port; see $PRJ/.nix-browser/chrome.log" >&2
+                exit 1
+              fi
+
+              node scripts/userscript-watch.mjs --port "$PORT" ''${HOT:+--hot}
+            '';
+          };
+
+          browser-bump = mk {
+            name = "browser-bump";
+            deps = [
+              pkgs.curl
+              pkgs.jq
+            ];
+            text = ''
+              # NETWORK. Prints what nix/chrome-for-testing.nix should say next.
+              api=https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions.json
+              if [ $# -eq 0 ]; then
+                echo "last known good Chrome for Testing:"
+                curl -fsS "$api" | jq -r '.channels | to_entries[] | "  \(.key)\t\(.value.version)"'
+                echo
+                echo "then: nix run .#browser-bump -- <version>"
+                exit 0
+              fi
+              v="$1"
+              echo "  version = \"$v\";"
+              for plat in mac-arm64 mac-x64 linux64; do
+                url="https://storage.googleapis.com/chrome-for-testing-public/$v/$plat/chrome-$plat.zip"
+                if ! h=$(nix-prefetch-url --type sha256 "$url" 2>/dev/null | tail -1); then
+                  echo "  # $plat: FAILED to fetch $url" >&2
+                  continue
+                fi
+                sri=$(nix hash convert --hash-algo sha256 --to sri "$h")
+                printf '  # %-9s hash = "%s";\n' "$plat" "$sri"
+              done
+              echo
+              echo "paste into nix/chrome-for-testing.nix, then: nix run .#browser"
+            '';
+          };
+
           toolkit = mk {
             name = "toolkit";
             text = ''
@@ -669,6 +874,10 @@
                 check-versions          @version monotonicity against origin/main
                 publish-check <script>  every pre-publish condition, as a checklist
                 new-script <name>       scaffold a script + listing with the design rules
+
+                browser [--violentmonkey]  pinned Chromium, project-local profile
+                watch [--hot] [--violentmonkey]  ^ plus live injection on save
+                browser-bump [version]  refresh the pinned Chrome for Testing
 
                 diagram [file]          mermaid -> ASCII for listings/*.md (<=80 cols)
                 link-check              lychee over every *.md (NETWORK)
@@ -688,7 +897,7 @@
         lib.mapAttrs (name: drv: {
           type = "app";
           program = "${drv}/bin/${name}";
-        }) (lib.filterAttrs (n: _: n != "mermaid-ascii") self.packages.${system})
+        }) (lib.filterAttrs (n: _: !(lib.elem n nonApps)) self.packages.${system})
       );
 
       # ── Gates ────────────────────────────────────────────────────────────
@@ -713,7 +922,7 @@
               touch "$out"
             '';
         in
-        self.packages.${system}
+        removeAttrs self.packages.${system} [ "chromium" ]
         // {
           # eslint-plugin-userscripts resolves from eslint.config.mjs's own
           # directory, so node_modules has to sit beside it — NODE_PATH is
@@ -799,7 +1008,7 @@
               pkgs.git
               pkgs.jq
             ]
-            ++ lib.attrValues (lib.filterAttrs (n: _: n != "mermaid-ascii") self.packages.${system});
+            ++ lib.attrValues (lib.filterAttrs (n: _: !(lib.elem n nonApps)) self.packages.${system});
 
             shellHook = ''
               echo "userscripts — node $(node --version), $(mermaid-ascii --version 2>/dev/null || echo 'mermaid-ascii')"
