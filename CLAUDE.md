@@ -202,7 +202,18 @@ left stock, exactly as installed. What it cannot do is provide manager APIs. **E
 is `@grant none`, so nothing is missing** - and if one ever grants something, `watch` refuses to
 inject it and tells you to use the Violentmonkey lane instead.
 
-**Two traps already paid for, both measured 2026-09-29:**
+**Three traps already paid for, all measured 2026-09-29:**
+
+- **CDP injection runs EARLIER than a manager's document-start, and that broke
+  `leolist-listings-only`.** At `addScriptToEvaluateOnNewDocument` time the document is
+  *completely empty* - `documentElement` is `null`, `document.childNodes.length` is `0`,
+  `readyState` is `"loading"`. A Chrome content script at `document_start` runs a moment later,
+  once the parser has created `<html>` and before any other DOM. The script touches
+  `documentElement.dataset` immediately and died with **"Cannot read properties of null"** -
+  which, correctly, left the page rendering **stock**, so nothing looked broken except that
+  nothing happened. `watch` now waits for `<html>` via a `MutationObserver` on `document`.
+  **If you ever hand-roll an injection, do the same** - do not run earlier than the thing you
+  are reproducing.
 
 - **`--hot` cannot exercise a document-start gate.** The page has already painted, so a theme or
   pre-paint attribute gate has nothing to gate. Iterate in `--hot`; **sign off on a reload.**

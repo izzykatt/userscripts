@@ -63,6 +63,14 @@ Entries are grouped by script. Within a release, use the
     and `watch` refuses to inject one that grants anything.
   - **A save that does not parse never reaches the page**: `node --check` runs
     first, the error prints, and the browser keeps the last good version.
+  - The injected wrapper **waits for `<html>`**. `addScriptToEvaluateOnNewDocument`
+    fires on a completely empty document — measured on leolist.cc:
+    `documentElement` null, zero child nodes, `readyState` `"loading"` — which is
+    *earlier* than a manager's `document-start`, where the parser has already
+    created `<html>`. `leolist-listings-only` touches `documentElement.dataset`
+    immediately and died with "Cannot read properties of null", leaving the page
+    stock: nothing broken, nothing happening. Do not run earlier than the thing
+    being reproduced.
   - `--hot` swaps into the live page with no reload, which also exercises the
     teardown contract on every save. The default reloads instead, because an
     already-painted page gives a document-start gate nothing to gate.
