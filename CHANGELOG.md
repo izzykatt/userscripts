@@ -104,10 +104,20 @@ Entries are grouped by script. Within a release, use the
     has one. Without that split, eporner's own
     "AbortError: The play() request was interrupted" failed the userscript that
     had nothing to do with it.
-  - **It matches both marker namespaces.** `leolist-listings-only` writes
-    `nix-leolist-*`, `thumbwall` writes `nx-*` — a tool hardcoding one reports
-    a clean "0 injected, not armed" for the other on every page it works on.
-    `--prefix` covers a third.
+  - **It matches every marker namespace, and scans by ATTRIBUTE.** There are
+    five, not two: `data-nix-*` (leolist) plus one per thumbwall module —
+    `data-nx-*` (xnxx/xvideos), `data-ep-*` (eporner), `data-xh-*` (xhamster),
+    `data-ph-*` (pornhub). Checking one across all five hosts reported three
+    working modules as declining to arm. Counting by class was wrong too:
+    thumbwall marks the site's OWN cards with `data-<ns>-card` and injects
+    almost no classes, so a class-based count reads ~0 on a page it has fully
+    restyled. Class matching is now restricted to the two prefixes actually
+    used as class names, because `[class*="ph-"]` matches pornhub's own markup.
+  - All four thumbwall modules and leolist were re-verified as **arming**
+    against live pages on 2026-09-29 once the right attribute was checked:
+    pornhub `/video?o=mr` (106 marked nodes), xhamster `/newest` (153),
+    eporner `/most-viewed/` (108), xnxx `/best/2026-08` (1439). Nothing in
+    either userscript needed changing.
 - **The loop stays up on its own.** `scripts/watch-daemon.mjs` supervises it from
   Claude Code's hooks: started at session start, revived after any `.user.js`
   edit and at the end of every turn, and left running when the session ends

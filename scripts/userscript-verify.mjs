@@ -42,16 +42,45 @@ if (!url) {
   process.exit(2);
 }
 
-// THE MARKER NAMESPACE IS NOT ONE STRING. This repository has two: leolist
-// writes `nix-leolist-*` / `data-nix-leolist-*`, thumbwall writes `nx-*` /
-// `data-nx-*`. Hardcoding either one reports a clean "0 injected, not armed"
-// for the other script on every page it actually works on — which is the exact
-// shape of the false negative this command exists to stop. Override with
-// --prefix when a new script picks a third.
-const PREFIXES = String(opt('--prefix', 'nix-,nx-')).split(',').map((p) => p.trim()).filter(Boolean);
-const classSel = PREFIXES.map((p) => `[class*="${p}"]`).join(',');
-const imgSel = PREFIXES.map((p) => `img[class*="${p}"]`).join(',');
+// THE MARKER NAMESPACE IS NOT ONE STRING, AND NOT EVEN ONE PER SCRIPT.
+// leolist writes `data-nix-leolist-*`. thumbwall writes a DIFFERENT namespace
+// per host module: `data-nx-*` (xnxx/xvideos), `data-ep-*` (eporner),
+// `data-xh-*` (xhamster), `data-ph-*` (pornhub). Checking one of them reports a
+// clean "not armed" on every host that uses another — which is how three of
+// five hosts were briefly written up as broken when they were not
+// (2026-09-29). Override with --prefix when a script adds a sixth.
+const PREFIXES = String(opt('--prefix', 'nix-,nx-,ep-,xh-,ph-'))
+  .split(',').map((p) => p.trim()).filter(Boolean);
+
+// Injected nodes are counted by ATTRIBUTE, not class: thumbwall marks the
+// site's own cards with `data-<ns>-card` and injects almost no classes of its
+// own. Class matching stays restricted to the two prefixes actually used as
+// class names, because `[class*="ph-"]` would match pornhub's own markup and
+// `xh-` would match xhamster's.
+const CLASS_PREFIXES = PREFIXES.filter((p) => p === 'nix-' || p === 'nx-');
 const attrTest = PREFIXES.map((p) => `n.indexOf('data-${p}') === 0`).join(' || ');
+const SCAN = `(function(){
+  var pre = ${JSON.stringify(PREFIXES.map((p) => `data-${p}`))};
+  var cls = ${JSON.stringify(CLASS_PREFIXES)};
+  var n = 0;
+  var all = document.getElementsByTagName('*');
+  for (var i = 0; i < all.length; i++) {
+    var el = all[i], hit = false;
+    for (var a = 0; a < el.attributes.length && !hit; a++) {
+      for (var j = 0; j < pre.length && !hit; j++) {
+        if (el.attributes[a].name.indexOf(pre[j]) === 0) hit = true;
+      }
+    }
+    if (!hit && el.className && typeof el.className === 'string') {
+      for (var k = 0; k < cls.length && !hit; k++) {
+        if (new RegExp('(^|\\s)' + cls[k]).test(el.className)) hit = true;
+      }
+    }
+    if (hit) n++;
+  }
+  return n;
+})()`;
+const imgSel = CLASS_PREFIXES.map((p) => `img[class*="${p}"]`).join(',') || 'img.__none__';
 
 const MARKERS = `(function(){
   var imgs = Array.from(document.querySelectorAll('${imgSel}'));
@@ -60,7 +89,7 @@ const MARKERS = `(function(){
     ran: Object.getOwnPropertyNames(window).filter(function(k){ return /^__nix.*Teardown$/.test(k); }),
     armed: Array.from(document.documentElement.attributes).map(function(a){ return a.name; })
              .filter(function(n){ return ${attrTest}; }),
-    injected: document.querySelectorAll('${classSel}').length,
+    injected: ${SCAN},
     images: imgs.length,
     decoded: imgs.filter(function(i){ return i.complete && i.naturalWidth > 0; }).length,
     // An <img> with no src yet reports complete === true and naturalWidth 0,
@@ -78,7 +107,7 @@ const MARKERS = `(function(){
 })()`;
 
 // Grows as lazy content hydrates; the wheel step stops when it stops growing.
-const MEASURE = `document.querySelectorAll('${classSel}').length + document.querySelectorAll('${imgSel}').length`;
+const MEASURE = `${SCAN} + document.querySelectorAll('${imgSel}').length`;
 
 let version;
 try {
