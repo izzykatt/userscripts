@@ -102,15 +102,17 @@ fix                              # eslint --fix + markdownlint --fix
 bump <script> [patch|minor|major|x.y.z]   # the @version trap, mechanised
 publish-check <script>           # version, CHANGELOG, listing and README row in one pass
 new-script <name>                # scaffold a script + listing; passes all gates as generated
-browser [--violentmonkey]        # the pinned browser, project-local profile
-watch [--hot] [--violentmonkey]  # ^ plus the scripts injected, live on every save
-browser-bump [version]           # refresh the Chrome for Testing pin
 diagram [file]                   # mermaid -> ASCII for listings/*.md, capped at 80 columns
 check-versions                   # @version monotonicity vs origin/main
 deps                             # point ./node_modules at the flake-pinned tree
 ci                               # everything CI runs, in CI's order
 nix flake check                  # every OFFLINE gate, sandboxed
 ```
+
+**`browser`, `watch`, `verify` and `browser-bump` are deliberately NOT in that list.** They
+drive Chrome for Testing over CDP, which is not the browser here and not the channel here - see
+"The browser, and how a change is actually verified" below. They still run if you invoke them;
+their output is not verification and must never be reported as such.
 
 **`bump` rather than editing the `@version` line by hand.** It preserves the metadata block's
 alignment and refuses any number that does not clear both the working copy and `origin/main` -
@@ -154,176 +156,111 @@ written into a live DOM attribute), `pagin` (a substring selector, `[class*="pag
 `contener` (the site's own misspelling in an id we have to match). Add a fourth only with the
 same kind of note.
 
-## The browser, and watching a script live
+## The browser, and how a change is actually verified
 
-**`nix run .#watch` is the loop.** It starts **Chrome for Testing 154.0.8037.57**, pinned in
-`nix/chrome-for-testing.nix` and never self-updating, against a **project-local profile** at
-`.nix-browser/profile` - so a debugger is never pointed at the operator's own session, cookies or
-history. Then it injects every `.user.js` over CDP and re-injects on save.
+**THE ONLY BROWSER IS UNGOOGLED-CHROMIUM, AND THE ONLY CHANNEL IS A REAL
+VIOLENTMONKEY INSTALL.** Verified on disk 2026-09-29:
 
-```bash
-nix run .#watch                        # reload on save - faithful document-start
-nix run .#watch -- --hot               # swap in place, no reload - fast, less faithful
-nix run .#watch -- --scroll            # rehydrate lazy content after each reload
-nix run .#watch -- --violentmonkey     # a REAL install in Violentmonkey 2.49.0
+| | what is actually here |
+|---|---|
+| browser | **Chromium 152.0.7977.64**, `/Applications/Chromium.app` |
+| profile | the operator's own, `~/Library/Application Support/Chromium/Default` |
+| manager | **Violentmonkey 2.48.0**, from the Chrome Web Store, id `jinjaccalgkegednnccohejagnlnfdag` |
+| channel | the manager's own install/update path - **nothing else** |
 
-nix run .#verify -- <url> --expect data-nix-leolist-listings-only
+**No Chrome for Testing. No CDP.** Not `nix run .#watch`, not `nix run .#verify`,
+not page-lab's `selector-verify.mjs` on `:9222`, not `chrome-devtools-mcp`, not
+kapture, not `mcp__claude-in-chrome`. Do not start one, do not attach to one, do
+not assume one is listening.
+
+**Why, stated as the trade it is.** The CDP lane runs a *different browser* at a
+*different version* against a *throwaway profile*. Whatever it proves is not
+what a reader gets, so it is not verification - it is a demo that happens to be
+scriptable. It is also the operator's own profile and these are adult sites,
+which is the second, independent reason an agent does not drive it.
+
+The drift was real and it was measured: a whole feature was "verified on all
+five hosts" over CDP against Chrome for Testing **154**, on a machine whose
+actual browser is **152** - and two of the five hosts turned out to be
+scroll-locked in ways the rig papered over. Note that thumbwall's own `WHY`
+block records its original measurements on `Chromium 152.0.7977.64`: the real
+browser. The 154 lane was the newer, wrong thing layered on top.
+
+### The loop
+
+```text
+you edit <name>.user.js  ->  Ismail reloads it in Violentmonkey  ->  Ismail reports
 ```
 
-**`verify` is the check, and its wheel-scroll step is the whole point.** It answers four
-questions in order: did the script **run**, did it **throw**, did it **arm**, and did the lazy
-content actually **hydrate**. Exit 1 on a script that never ran, threw, or left a broken image.
-Not arming is *not* a failure unless you name the attribute you expected - `--expect` takes the
-attribute name because "armed" is not one bit: on leolist's homepage `data-nix-leolist-dark` is
-present (theme, site-wide) and `data-nix-leolist-listings-only` is absent, and **both are
-correct**.
+That is the whole loop, and **the middle step is his, not yours.** Plan the work
+around a human-in-the-loop turnaround rather than around a measurement you can
+run yourself. Concretely:
 
-**`--gate` answers "why not?" when a script declines.** It replays a grid-gallery gate signal by
-signal - grids matched, and per grid: renders / kids / units / rows / organic share - then whether
-a pager was found and whether it sits inside the winning grid.
+- **Ask for one install and one report, not five.** Batch every question a build
+  needs to answer into that single round trip.
+- **Make the script report on itself.** When something needs measuring, have the
+  script compute it and log it - counts, the selector that matched, the URL it
+  fetched, the gate signal that failed - so a paste from the console answers the
+  question. A script that can only be understood by inspecting the DOM by hand
+  costs him the work instead of doing it.
+  Put it behind a flag the reader never trips (a `localStorage` key, or a
+  constant at the top of the file that ships `false`), and **never** leave a
+  release logging on every page load.
+- **`@version` still gates the reload.** Violentmonkey never downgrades and a
+  same-version reinstall is a silent no-op, so bump it or he will be testing the
+  old code and reporting on it in good faith. See the `@version` trap below.
+- **Opening the target page is his action.** These are adult sites. Ask for the
+  page; never navigate anything there yourself.
 
-```bash
-nix run .#verify -- <url> --expect data-ph-thumbwall --gate 'ul.videos,/view_video.php'
-nix run .#verify -- <url> --expect data-xh-thumbwall --gate 'div.thumb-list,/videos/'
-```
+### There is no CDP tooling left
 
-**It takes the constants rather than knowing them**, and it only fits the gate shape
-`runPornhub()` and `runXhamster()` share. `runXnxxXvideos()` and `runEporner()` are built
-differently - `.mozaique` plus a named `PAGER_SEL` - so the flag does not apply there. Read the
-constants out of the module and pass them; a built-in copy would be stale within the week.
+Removed 2026-09-29, in full: `nix/chrome-for-testing.nix`, `nix/violentmonkey.nix`,
+`scripts/cdp.mjs`, `scripts/userscript-watch.mjs`, `scripts/userscript-verify.mjs`,
+`scripts/watch-daemon.mjs`, the `browser` / `watch` / `verify` / `watch-status` /
+`watch-stop` / `browser-bump` flake commands, the two Claude Code hooks that kept
+the loop alive, and the 470 MB `.nix-browser/` profile. The flake needs no
+`allowUnfreePredicate` any more, because nothing unfree is left in it.
 
-**If the replica disagrees with the script, the replica is wrong.** A gate reporting "all signals
-pass" while the script declines means wrong constants or a wrong `--expect` attribute - it printed
-exactly that on pornhub and xhamster while both were in fact arming under names I was not
-checking. `verify` says so on that line rather than letting you file a bug against working code.
+**Do not reintroduce any of it.** If a future task seems to need a scriptable
+browser, the answer is a better self-reporting script, not a second browser -
+see the loop above.
 
-**The two scripts do not share a marker namespace.** `leolist-listings-only` writes
-`nix-leolist-*` and `data-nix-leolist-*`; `thumbwall` writes `nx-*` and `data-nx-thumbwall`.
-`verify` matches both by default and takes `--prefix` for a third - because a tool hardcoding one
-of them reports a clean "0 injected, not armed" for the other script on every page it actually
-works on, which is the exact false negative this command exists to stop.
+Two lessons from that lane are worth keeping, because they are about the *page*,
+not the rig:
 
-**`window.scrollTo` is the scroll-shaped version of `el.click()`.** leolist sets
-`html { overflow: hidden }` and scrolls its listing column, so `scrollTo` moved a number the page
-never heard about: `scrollY` stayed `0` through six attempts while an `IntersectionObserver`
-waited for a scroll that never came, and a filmstrip of **759 photos measured as ZERO**. One
-dispatched wheel event took the same page from 29 images to 1201. Measured 2026-09-29. Use
-`Input.dispatchMouseEvent` with `type: "mouseWheel"`; never `window.scrollTo`.
-
-**THE HOOKS KEEP IT UP, so normally you never type it.** `scripts/watch-daemon.mjs ensure` runs
-at session start, after any `.user.js` edit, and at the end of every turn. It is idempotent, it
-survives the session that started it (PPID 1), and it restarts the loop if it died.
-
-```bash
-nix run .#watch-status    # is it up?
-nix run .#watch-stop      # take it down
-```
-
-Set `USERSCRIPTS_WATCH=0` (in `.envrc.local`) to switch the auto-start off entirely.
-
-**The daemon NEVER attaches to a browser it did not start.** Typing `nix run .#watch` yourself
-attaches to whatever answers CDP on the port - correct, because you asked for it. A hook doing
-the same thing would inject these scripts into whatever Chromium happens to be on 9222, which on
-this machine is the operator's own profile. So the daemon tracks what it started in
-`.nix-browser/watch.json` and declines with a reason otherwise.
-
-- **It attaches rather than launches** when something already answers CDP on the port, and then
-  leaves that browser running when it exits. A browser it started, it also kills.
-- **The default port is 9222**, which is the port `page-lab`'s `selector-verify.mjs` below
-  already expects - so `watch` and the measuring tools are the same browser.
-- **A save that does not parse never reaches the page.** `node --check` runs first; the error
-  prints and the browser keeps the last good version.
-- **`USERSCRIPTS_CHROME=/path/to/chrome`** overrides the pin when you need the browser you
-  actually have. Nothing else does - an installed browser self-updates, and then a measurement
-  note names a version that no longer exists.
-
-**Why CDP injection is faithful HERE.** `Page.addScriptToEvaluateOnNewDocument` runs before any
-page script on every navigation, which is what `@run-at document-start` means, and the `@match` /
-`@noframes` gates are compiled into the payload and evaluated in-page - so every other page is
-left stock, exactly as installed. What it cannot do is provide manager APIs. **Every script here
-is `@grant none`, so nothing is missing** - and if one ever grants something, `watch` refuses to
-inject it and tells you to use the Violentmonkey lane instead.
-
-**Three traps already paid for, all measured 2026-09-29:**
-
-- **CDP injection runs EARLIER than a manager's document-start, and that broke
-  `leolist-listings-only`.** At `addScriptToEvaluateOnNewDocument` time the document is
-  *completely empty* - `documentElement` is `null`, `document.childNodes.length` is `0`,
-  `readyState` is `"loading"`. A Chrome content script at `document_start` runs a moment later,
-  once the parser has created `<html>` and before any other DOM. The script touches
-  `documentElement.dataset` immediately and died with **"Cannot read properties of null"** -
-  which, correctly, left the page rendering **stock**, so nothing looked broken except that
-  nothing happened. `watch` now waits for `<html>` via a `MutationObserver` on `document`.
-  **If you ever hand-roll an injection, do the same** - do not run earlier than the thing you
-  are reproducing.
-
-- **`--hot` cannot exercise a document-start gate.** The page has already painted, so a theme or
-  pre-paint attribute gate has nothing to gate. Iterate in `--hot`; **sign off on a reload.**
-- **Registering against an already-open tab does nothing on its own.**
-  `addScriptToEvaluateOnNewDocument` affects the NEXT navigation only, so `watch` reloads every
-  page that was already open when it attached. Without that, the script is registered and not
-  running - a symptom indistinguishable from a dead selector.
-
-The Violentmonkey lane is the one that matches a reader exactly: a real install, the manager's
-own update path. It costs two one-time clicks per profile (Details -> *Allow access to file
-URLs*, then open the `.user.js` `file://` URL and tick **Track local file**). `--load-extension`
-was verified working on Chrome for Testing 154 despite the Chrome 137+ restriction elsewhere.
+- **A dispatched wheel event is the only real scroll.** `window.scrollTo` moves a
+  number a page with an inner scroller never hears about - leolist measured a
+  759-photo filmstrip as ZERO that way (2026-09-29). Under a real install this is
+  moot for verification, since the operator scrolls with an actual wheel; it
+  still matters for any code that synthesises scrolling.
+- **Some sites are scroll-locked before you arrive.** Measured 2026-09-29:
+  xhamster ships `body.xh-scroll-disabled` (`overflow-y: hidden`) on a clean
+  profile with no dialog behind it, and pornhub holds `scrollHeight ===
+  innerHeight` behind its age modal - both **identical with a script armed and
+  with it torn down**, so neither is ours. Confirm the page scrolls at all before
+  concluding a scroll-driven feature is broken.
 
 ## Measuring the live page
 
-CONTRIBUTING.md says "measure first, never guess a selector" but does not say *with what*.
-Chromium runs with `--remote-debugging-port=9222` - `nix run .#watch` is now the deterministic
-way to get one - and page-lab ships the tooling:
+**Measure first, never guess a selector** still stands - what changed is the
+instrument. There is no CDP, so a selector is verified by the script itself, on
+the page, in the operator's browser:
 
-```bash
-pl=$(ls -d ~/.claude/plugins/cache/*/page-lab/*/scripts | tail -1)
-
-bash "$pl/page-route.sh"          # FIRST - which browser route is up. Most "broken
-                                  # selector" reports are an unreachable browser.
-node "$pl/selector-verify.mjs" --target-id "$tid" '<sel>' ...
-bash "$pl/devtools-doctor.sh"     # triage when the route is down
-node "$pl/survey-recon.mjs"       # survey a page before redesigning it
-```
-
-Resolve `$pl` with the glob - a bare path pins one plugin revision and several are installed.
-The `page-lab:pick` skill is the other path: the operator points at an element and you get a
-dated, verified selector back.
-
-`selector-verify.mjs` returns `UNIQUE` / `AMBIGUOUS` / `DEAD` / **`GENERATED`** - that last
-verdict *mechanically enforces* the no-generated-class-names rule this repo states in prose. Use
-it rather than eyeballing.
-
-**Three traps, all hit for real:**
-
-- **`--target-id` is not optional.** The default ("first page target") silently scores against a
-  Violentmonkey extension page. Same selectors, same instant: `DEAD` without it, `UNIQUE` with
-  it. Get the id from `curl -s localhost:9222/json/list`.
-- **Verify against a *stock* page.** Tear the script down first (the teardown globals are listed
-  under "Script map" below). A selector for a node the script has already relocated reads `DEAD`
-  while the script is live - you would be measuring your own output.
-- **`chrome-devtools-mcp` points at the wrong browser.** It is launched with a
-  `--userDataDir` of its own; the page under test is **Chromium on `:9222`**. Kapture
-  (`mcp__kapture__*`) is also live but needs an operator click to attach a tab - and a
-  `kapture-N` id is a **minted** id that evaporates on reload, so a selector built on one dies
-  silently after the session it was written in.
-
-**Opening the target page is the operator's action.** These are adult sites; an agent does not
-navigate the operator's browser there unasked. Ask for the tab, then measure it. `nix run .#watch`
-deliberately opens **no URL** of its own for the same reason.
-
-**Injecting is not installing.** `nix run .#watch` now removes the first two of these - it
-strips the metadata block itself and registers at document-start - so they apply to a HAND-ROLLED
-`Runtime.evaluate` injection, which is what you fall back to when measuring one-off:
-
-- Strip the `// ==UserScript== … ==/UserScript==` block first - metadata, not JS.
-- These scripts are `@run-at document-start`. Injected at `readyState: complete` they run against
-  a page that already painted, so a document-start gate (theme, pre-paint attribute on `<html>`)
-  has nothing to gate. Expect a flash the real install does not have. This is also exactly why
-  `watch --hot` is for iterating and a reload is for signing off.
-- Animations and transitions are still mid-flight on injection. **Poll until a measured value
-  stops changing**; a fixed sleep races it, and two equal reads are not proof - require three.
-- Re-injection is exactly the double-injection case the teardown contract exists for, so it
-  doubles as the livelock test.
+- **Write the candidate selector into the script behind a debug flag**, have it
+  log the match count and the first match's tag/id/class, and ask for that one
+  line back. That is the userscript-only equivalent of `selector-verify.mjs`'s
+  `UNIQUE` / `AMBIGUOUS` / `DEAD` verdict, and it has the advantage of scoring
+  the selector in the exact browser and profile that will run it.
+- **`GENERATED` has no tool here, so the rule carries itself.** Anchor on ARIA
+  roles, `href` values and data attributes. Never a generated class
+  (`searchSubmit-e1b81`, `root-f87d5`), and never `aria-label`, which is
+  localised - reading one to find a node matches nothing on a non-English UI.
+  Setting `aria-label` on a node **we** create is fine and expected.
+- **Verify against a stock page.** Ask him to disable the script (or use the
+  teardown global from the Script map below) before reading counts, or you are
+  measuring your own output.
+- **Break your own selector on purpose** and confirm the page renders stock. That
+  test needs no tooling at all and it is the one that proves the failure mode.
 
 ## The `@version` trap (has bitten more than once)
 
@@ -399,10 +336,11 @@ for each site's measured quirks, a dispatch table keyed on `location.hostname`.
 
 **EVERY MODULE HAS ITS OWN ATTRIBUTE NAMESPACE** - `nx`, `ep`, `xh`, `ph` - and so does
 `leolist-listings-only` (`nix`). Checking one of them across all five hosts is how three working
-modules got written up as broken for twenty minutes (2026-09-29). `nix run .#verify` knows all
-five; if you check by hand, check the RIGHT one. Verified armed 2026-09-29 on
-`pornhub.com/video?o=mr` (106 marked nodes), `xhamster.com/newest` (153),
-`eporner.com/most-viewed/` (108) and `xnxx.com/best/2026-08` (1439).
+modules got written up as broken for twenty minutes (2026-09-29). **Check the RIGHT one**, and
+when you ask the operator to check, name the attribute rather than saying "is it armed". Counts
+recorded 2026-09-29 - `pornhub.com/video?o=mr` 106 marked nodes, `xhamster.com/newest` 153,
+`eporner.com/most-viewed/` 108, `xnxx.com/best/2026-08` 1439 - were taken over CDP against
+Chrome for Testing 154, so treat them as ORDERS OF MAGNITUDE, not as figures to diff against.
 
 - **xnxx and eporner are carried forward VERBATIM** - byte-for-byte the gate, theme engine and
   purge rules that shipped as 2.2.0 and 2.3.0, each the product of field reports fixed under time
@@ -455,15 +393,15 @@ control.
 
 That is a **real gap, not a convention**: the sibling repo shipped a build that passed lint and
 every geometry check with its search **completely dead**, because nobody had ever clicked it.
-Until specs exist here, clicking through every primary action under a trusted event is a manual
-step you must actually do - and writing the first spec is a welcome change.
+Until specs exist here, clicking through every primary action is a manual step **the operator
+performs**, on a real install, and reports back. For this repo that means: click a card through
+to its own page, open the filter sidebar and tick a filter, play a video.
 
-The runner, if you add one:
-
-```bash
-pl=$(ls -d ~/.claude/plugins/cache/*/page-lab/*/scripts | tail -1)
-node "$pl/userscript-acceptance.mjs" --repeat 3 <name>.acceptance.mjs
-```
+**page-lab's `userscript-acceptance.mjs` runner is NOT the answer here** - it drives a browser
+over CDP, which is neither the browser nor the channel in use (see below). A spec format that
+suits this repo would have to run **inside** the script, behind a debug flag, and print its
+pass/fail lines to the console for the operator to paste back. Writing that is a welcome change;
+wiring up a CDP runner is not.
 
 ## How changes land
 

@@ -13,6 +13,24 @@ Entries are grouped by script. Within a release, use the
 
 ## [Unreleased]
 
+### Removed
+
+- **The entire Chrome for Testing / DevTools-Protocol toolchain**, because it was
+  not the browser this project is developed against and therefore not
+  verification. Gone: `nix/chrome-for-testing.nix`, `nix/violentmonkey.nix`,
+  `scripts/cdp.mjs`, `scripts/userscript-watch.mjs`,
+  `scripts/userscript-verify.mjs`, `scripts/watch-daemon.mjs`, the `browser` /
+  `watch` / `verify` / `watch-status` / `watch-stop` / `browser-bump` flake
+  commands, the two Claude Code hooks that kept the loop alive, and the 470 MB
+  `.nix-browser/` profile. The repository went from 474 MB to **3.8 MB** on disk.
+- **The `allowUnfreePredicate` with it.** It existed to admit exactly one
+  package, Chrome for Testing; nothing unfree is left in the flake, so a
+  contributor no longer needs any unfree allowance to get a dev shell.
+- **Five ESLint globals** — `fetch`, `WebSocket`, `AbortController`, `setTimeout`,
+  `clearTimeout` — which only the CDP client needed. `scripts/` is now
+  `meta-lint.mjs` alone, and the globals list is back to what a file there
+  actually references, so `no-undef` keeps meaning something.
+
 ### Added
 
 - Repository scaffolding: contribution guide, code of conduct, security policy,
@@ -162,6 +180,36 @@ Entries are grouped by script. Within a release, use the
   whole.
 
 ### Changed
+
+- **The documented way to test a change is to install it.** The browser is
+  ungoogled-chromium **152.0.7977.64** with **Violentmonkey 2.48.0** from the
+  Chrome Web Store, and the only channel into a page is the manager's own
+  install path. `CONTRIBUTING.md` gains a **Testing a change** section;
+  `CLAUDE.md`'s two browser sections were rewritten around it; `README.md` no
+  longer offers `nix run .#watch` as the one-command way to try something.
+- **Why, stated as the trade it was.** The CDP lane ran a different browser at a
+  different version against a throwaway profile, so whatever it proved was not
+  what a reader gets. It was measured drifting: a feature was reported "verified
+  on all five hosts" against Chrome for Testing **154** on a machine whose actual
+  browser is **152**, and two of those five hosts turned out to be scroll-locked
+  in ways the rig papered over. thumbwall's own `WHY` block had recorded its
+  original measurements on `Chromium 152.0.7977.64` all along — the real browser.
+- **Measuring a selector is now the script's own job.** `selector-verify.mjs`
+  returned a `GENERATED` verdict mechanically; with no tool, `CONTRIBUTING.md` §
+  Measure the live page carries the rule instead — anchor on ARIA roles, `href`
+  values and data attributes, never a generated class and never `aria-label` or
+  link text, both of which are localised. Log the count from the script behind a
+  debug flag that ships off, and break the selector on purpose to prove the
+  failure mode.
+- **Two findings kept as page facts, not rig facts.** xhamster ships
+  `body.xh-scroll-disabled` (`overflow-y: hidden`) on a clean profile with no
+  dialog behind it, and pornhub holds `scrollHeight === innerHeight` behind its
+  age modal. Both measured 2026-09-29 identical with a script armed and with it
+  torn down, so neither is the script's doing — check the page scrolls at all
+  before blaming a scroll-driven feature.
+- The per-host marked-node counts in `CLAUDE.md`'s script map (106 / 153 / 108 /
+  1439) are labelled as CDP-era figures: orders of magnitude, not numbers to diff
+  against.
 
 - CI's Node is 20 → **22**, matching `nodejs_22` in `flake.nix`, so the npm path
   and the flake path run ESLint on the same runtime. Node 20 went end-of-life in

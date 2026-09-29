@@ -15,11 +15,6 @@ result
 result-*
 .direnv/
 
-# The browser `nix run .#watch` drives: a PROJECT-LOCAL Chrome profile plus its
-# log. Hundreds of megabytes, and it holds cookies for whatever you were testing
-# — it must never be committed, and it is not shared with your real browser.
-.nix-browser/
-
 # Editor and OS noise
 .DS_Store
 Thumbs.db
