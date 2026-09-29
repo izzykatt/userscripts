@@ -9,6 +9,7 @@ method — read the section that matches what you are doing.
 - [The metadata block](#the-metadata-block)
 - [Which fork does my script go to?](#which-fork-does-my-script-go-to)
 - [The `@version` trap](#the-version-trap)
+- [Testing a change](#testing-a-change)
 - [Measure the live page — never guess a selector](#measure-the-live-page--never-guess-a-selector)
 - [Lint gates](#lint-gates)
 - [Adding a new script](#adding-a-new-script)
@@ -49,12 +50,6 @@ them as `nix run .#<name>`, or bare inside `nix develop`.
 | `publish-check <script>` | every pre-publish condition, as a checklist |
 | `new-script <name>` | scaffold a script + listing with the design rules wired in |
 | `check-versions` | `@version` monotonicity against `origin/main` |
-| `browser [--violentmonkey]` | the pinned browser, on a project-local profile |
-| `watch [--hot] [--violentmonkey]` | the same browser, with every script injected and re-injected on save |
-| `browser-bump [version]` | refresh the pinned Chrome for Testing |
-| `verify <url> [--expect <attr>]` | did the script run, throw, arm and hydrate on that page? |
-| `verify … --gate '<sel>,<href>'` | and if it declined, which gate signal failed |
-| `watch-status` / `watch-stop` | inspect or stop the loop the Claude Code hooks keep alive |
 | `diagram [file]` | Mermaid → ASCII for `listings/*.md`, capped at 80 columns |
 | `link-check` | lychee over every `*.md` (**network**) |
 | `deps` | point `./node_modules` at the flake-pinned tree — no `npm install` |
@@ -70,39 +65,6 @@ the same thing it means in CI.
 packaged in nixpkgs. It is still deterministic: `importNpmLock` builds
 `node_modules` straight from `package-lock.json` using the integrity hash
 already recorded there, so no step in this flake touches the network.
-
-### Trying a script in a browser
-
-```bash
-nix run .#watch                      # pinned Chromium + every script, live on save
-nix run .#watch -- --hot             # swap in place with no reload, for iterating
-nix run .#watch -- --violentmonkey   # a real install, the way a reader runs it
-```
-
-`nix/chrome-for-testing.nix` pins **Chrome for Testing 154.0.8037.57**, which
-never self-updates — so "measured on 154.0.8037.57" stays a checkable claim.
-`pkgs.chromium` is Linux-only in nixpkgs, and an installed browser updates out
-from under a measurement; this is the version everyone gets.
-
-The profile lives at `.nix-browser/profile`, **project-local and gitignored**.
-Your own session, cookies and history are never inside this tool's reach.
-
-Injection is faithful because every script here is `@grant none` and registers
-at document-start. **Iterate with `--hot`; sign off on a reload** — an
-already-painted page gives a document-start gate nothing to gate.
-
-**Measure after a real scroll, never `window.scrollTo`.** A page that scrolls an
-inner column never hears about `scrollTo`, so anything behind an
-`IntersectionObserver` measures as absent. `nix run .#verify` dispatches real
-wheel events until hydration stops growing; `nix run .#watch -- --scroll` does a
-shorter sweep after each reload.
-
-If you use Claude Code here, its hooks keep that loop running for you
-(`scripts/watch-daemon.mjs`): started at session start, revived after any
-`.user.js` edit and at the end of every turn, and left running when the session
-ends. `USERSCRIPTS_WATCH=0` turns it off. It only ever manages a browser **it
-started** — it will never attach to one already on the port, because that one is
-probably yours.
 
 ## Repository shape
 
@@ -190,16 +152,75 @@ Pick the right one up front. Record which in the README catalogue table.
 
 CI fails a PR that changes a `.user.js` without raising its `@version`.
 
+## Testing a change
+
+**The only channel into a page is a real userscript install**, in the browser
+this repository is developed against:
+
+| | what is used |
+|---|---|
+| browser | ungoogled-chromium **152.0.7977.64** |
+| manager | **Violentmonkey 2.48.0**, installed from the Chrome Web Store |
+| profile | the developer's own |
+
+There is no headless lane and no DevTools-Protocol lane. A change is tested by
+installing it — edit the `.user.js`, raise `@version`, reload it in Violentmonkey,
+open the target page, and look.
+
+**Raise `@version` or you are testing the old code.** Violentmonkey never
+downgrades, and a same-version reinstall is a silent no-op with nothing anywhere
+saying so. See [The `@version` trap](#the-version-trap).
+
+**Make the script answer the question.** When something needs counting — how many
+nodes a selector matched, which gate signal failed, what URL was fetched — have
+the script compute it and `console.log` it behind a debug flag that ships off,
+rather than inspecting the DOM by hand. It is faster, it is repeatable, and it
+scores the selector in the exact browser that will run it.
+
+### Reloading without a reinstall each round
+
+One-time setup in Violentmonkey:
+
+1. Chromium → Extensions → Violentmonkey → **Details** → *Allow access to file
+   URLs*.
+2. Open the `.user.js` as a `file://` URL and install it.
+3. In the script's settings, tick **Track local file**.
+
+Violentmonkey then picks the file up on save.
+
+### Two things that are not your bug
+
+**A real scroll, never `window.scrollTo`.** A page that scrolls an inner column
+never hears about `scrollTo`, so anything behind an `IntersectionObserver`
+measures as absent — leolist read a 759-photo filmstrip as ZERO that way. You
+scroll with an actual wheel here, so this is a rule for code that *synthesises*
+scrolling, not for testing.
+
+**Check the page scrolls at all before blaming your own feature.** Measured
+2026-09-29: xhamster ships `body.xh-scroll-disabled` (`overflow-y: hidden`) on a
+clean profile with no dialog behind it, and pornhub holds
+`scrollHeight === innerHeight` behind its age modal. Both are identical with a
+script running and with it torn down, so neither is the script's doing.
+
 ## Measure the live page — never guess a selector
 
 A selector that was not verified against the live page is a guess, and guesses
 rot silently. Before you write one:
 
 1. Open the target page **with every userscript disabled** — otherwise you are
-   measuring your own output, not the site.
-2. Confirm your selector matches **exactly** the node count you intend.
-3. Confirm it does not rely on a generated class name.
-4. Note the date you measured in the script's header comment.
+   measuring your own output, not the site. (Each script's teardown global,
+   documented in its header, tears it down without uninstalling.)
+2. Confirm your selector matches **exactly** the node count you intend, by
+   logging the count from the script itself.
+3. Confirm it does not rely on a **generated class name** (`searchSubmit-e1b81`,
+   `root-f87d5`) — anchor on ARIA roles, `href` values and data attributes.
+4. Confirm it does not rely on **`aria-label` or on link text**. Both are
+   localised, so either matches nothing on a non-English UI. Setting
+   `aria-label` on a node *you* create is fine and expected.
+5. Note the date **and the browser version** you measured in the script's header
+   comment.
+6. **Break the selector on purpose** and confirm the page renders stock. That is
+   the test that proves the failure mode, and it needs no tooling at all.
 
 A header comment asserting behaviour the code does not perform is a **defect**,
 not stale documentation. Update the comment and the measurement together.

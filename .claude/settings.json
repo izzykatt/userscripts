@@ -43,9 +43,7 @@
       "Bash(typos:*)",
       "Bash(markdownlint-cli2:*)",
       "Agent(Explore)",
-      "Agent(Plan)",
-      "Bash(node scripts/watch-daemon.mjs:*)",
-      "Bash(pkill -f chrome-for-testing:*)"
+      "Agent(Plan)"
     ],
     "deny": [
       "Bash(npm install:*)",
@@ -66,11 +64,6 @@
             "type": "command",
             "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/session-start.mjs\"",
             "timeout": 20
-          },
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PROJECT_DIR:-.}/scripts/watch-daemon.mjs\" ensure",
-            "timeout": 30
           }
         ]
       }
@@ -95,18 +88,6 @@
             "type": "command",
             "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/stop-gate.mjs\"",
             "timeout": 90
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PROJECT_DIR:-.}/scripts/watch-daemon.mjs\" status",
-            "timeout": 15
           }
         ]
       }

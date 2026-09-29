@@ -154,18 +154,15 @@ export default [
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',
+      // Exactly what scripts/ and .claude/hooks/ actually reference today.
+      // The CDP set (fetch, WebSocket, AbortController, setTimeout,
+      // clearTimeout) went with the browser tooling in 2026-09-29; add one
+      // back only when a file here really uses it, so no-undef keeps meaning
+      // something.
       globals: {
         console: 'readonly',
         process: 'readonly',
         URL: 'readonly',
-        // scripts/userscript-watch.mjs speaks CDP over Node 22's own global
-        // WebSocket and fetch — no dependency, so nothing is added to
-        // package-lock.json for it.
-        fetch: 'readonly',
-        WebSocket: 'readonly',
-        AbortController: 'readonly',
-        setTimeout: 'readonly',
-        clearTimeout: 'readonly',
       },
     },
     rules: {

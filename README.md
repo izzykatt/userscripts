@@ -80,15 +80,12 @@ toolkit         # list every maintenance command
 lint            # the two gates CI requires
 ```
 
-Trying a change in a real browser is one command:
-
-```bash
-nix run .#watch     # pinned Chromium, every script injected, re-injected on save
-```
-
-It starts **Chrome for Testing 154**, pinned and non-self-updating, on a
-project-local profile, and re-injects each `.user.js` the moment you save it —
-so "measured on 154.0.8037.57" stays a claim anybody can check.
+**Trying a change means installing it.** There is no headless lane and no
+DevTools-Protocol lane: these scripts are developed against ungoogled-chromium
+with **Violentmonkey** installed from the Chrome Web Store, which is the way a
+reader runs them. Edit the `.user.js`, raise `@version`, reload it in
+Violentmonkey, open the page. See
+[CONTRIBUTING.md § Testing a change](CONTRIBUTING.md#testing-a-change).
 
 `nix flake check` runs every gate that works offline, in a sandbox — the same
 set `.github/workflows/nix.yml` runs. There is still **no build step**, and
