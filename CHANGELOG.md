@@ -13,218 +13,12 @@ Entries are grouped by script. Within a release, use the
 
 ## [Unreleased]
 
-### Removed
-
-- **The entire Chrome for Testing / DevTools-Protocol toolchain**, because it was
-  not the browser this project is developed against and therefore not
-  verification. Gone: `nix/chrome-for-testing.nix`, `nix/violentmonkey.nix`,
-  `scripts/cdp.mjs`, `scripts/userscript-watch.mjs`,
-  `scripts/userscript-verify.mjs`, `scripts/watch-daemon.mjs`, the `browser` /
-  `watch` / `verify` / `watch-status` / `watch-stop` / `browser-bump` flake
-  commands, the two Claude Code hooks that kept the loop alive, and the 470 MB
-  `.nix-browser/` profile. The repository went from 474 MB to **3.8 MB** on disk.
-- **The `allowUnfreePredicate` with it.** It existed to admit exactly one
-  package, Chrome for Testing; nothing unfree is left in the flake, so a
-  contributor no longer needs any unfree allowance to get a dev shell.
-- **Five ESLint globals** — `fetch`, `WebSocket`, `AbortController`, `setTimeout`,
-  `clearTimeout` — which only the CDP client needed. `scripts/` is now
-  `meta-lint.mjs` alone, and the globals list is back to what a file there
-  actually references, so `no-undef` keeps meaning something.
-
 ### Added
 
 - Repository scaffolding: contribution guide, code of conduct, security policy,
   issue and pull request templates, and two CI lint gates.
 - `automerge` workflow: dependabot's and the owner's pull requests are merged
   by the izzykatt-ci GitHub App once both required checks pass.
-- **`flake.nix` — the whole toolchain, pinned.** `nix develop` is the entire
-  onboarding step, and `nix run .#<name>` covers the maintenance operations
-  that were previously prose in `CONTRIBUTING.md`: `bump` (the `@version` trap,
-  mechanised — it refuses anything that does not clear `origin/main`),
-  `publish-check` (version, CHANGELOG entry, listing file and README row in one
-  pass), `new-script` (a scaffold that passes all three gates as generated, with
-  the teardown contract already wired), `diagram` (the listing renderer, capped
-  at 80 columns), `lint`, `fix`, `ci`, `check-versions`, `link-check`, `deps`
-  and `env-doctor`. Every command is a `writeShellApplication`, so shellcheck
-  runs at build time — a broken command fails `nix flake check`.
-- **`nix flake check` as a second, offline gate set.** Both publish gates plus
-  `node --check`, actionlint + shellcheck over the workflows (≈40 lines of shell
-  in `automerge.yml` that nothing checked before), typos, markdownlint and
-  nixfmt. `node_modules` is built from `package-lock.json` by `importNpmLock`,
-  so ESLint runs inside the sandbox with no network and no `npm install`.
-- `.github/workflows/nix.yml` runs that set in CI. **Additive and deliberately
-  not required by `main`'s ruleset** — a Nix installer having a bad day must
-  never block a one-line selector fix.
-- `nix/mermaid-ascii.nix` vendors the renderer that produces the ASCII diagrams
-  in `listings/*.md`. It is not in nixpkgs, and it is a real build input of the
-  deliverable, so a clone now needs this flake and nothing else.
-- `.claude/` project setup: the flake is wired into the existing `CLAUDE.md`
-  (commands, the markdown/spelling gates, the CI shape) rather than alongside
-  it; path-scoped rules for flake purity and for listing copy; `/publish` and
-  `/newscript` commands; and three hooks — a session digest of every script's
-  `@version` against `origin/main`, a post-edit parse + publish lint on any
-  touched `.user.js`, and a stop gate that refuses to end a turn leaving a
-  changed script red. `eslint.config.mjs` lints the hooks, because a hook that
-  throws is a hook that has silently stopped guarding.
-- **A browser, pinned, with the scripts live on save.** `nix run .#watch` starts
-  **Chrome for Testing 154.0.8037.57** (`nix/chrome-for-testing.nix`) against a
-  project-local profile at `.nix-browser/profile`, injects every `.user.js` over
-  CDP, and re-injects on every save. `pkgs.chromium` is Linux-only in nixpkgs
-  and an installed browser self-updates, so neither could make "measured on
-  154.0.8037.57" a checkable claim; Chrome for Testing keeps every version at
-  its own immutable URL and never updates itself. `nix run .#browser-bump`
-  refreshes the pin from Google's last-known-good feed.
-  - Injection is `Page.addScriptToEvaluateOnNewDocument`, so it runs at
-    document-start on every navigation, with each script's `@match` and
-    `@noframes` gates compiled into the payload and evaluated in-page. Every
-    script here is `@grant none`, so nothing a manager provides is missing —
-    and `watch` refuses to inject one that grants anything.
-  - **A save that does not parse never reaches the page**: `node --check` runs
-    first, the error prints, and the browser keeps the last good version.
-  - The injected wrapper **waits for `<html>`**. `addScriptToEvaluateOnNewDocument`
-    fires on a completely empty document — measured on leolist.cc:
-    `documentElement` null, zero child nodes, `readyState` `"loading"` — which is
-    *earlier* than a manager's `document-start`, where the parser has already
-    created `<html>`. `leolist-listings-only` touches `documentElement.dataset`
-    immediately and died with "Cannot read properties of null", leaving the page
-    stock: nothing broken, nothing happening. Do not run earlier than the thing
-    being reproduced.
-  - `--hot` swaps into the live page with no reload, which also exercises the
-    teardown contract on every save. The default reloads instead, because an
-    already-painted page gives a document-start gate nothing to gate.
-  - `--violentmonkey` loads a pinned **Violentmonkey 2.49.0**
-    (`nix/violentmonkey.nix`) for the real install path. `--load-extension` was
-    verified working on Chrome for Testing 154 despite the Chrome 137+
-    restriction elsewhere.
-  - The unfree allowance for the browser is a **predicate naming that one
-    package**, not `allowUnfree` — a clone still gets a dev shell with no global
-    Nix configuration.
-- **`nix run .#verify -- <url>` — did the script run, throw, arm and hydrate?**
-  Exit 1 on a script that never ran, threw an exception, or left a broken image.
-  Not arming is *not* a failure unless you name what you expected: `--expect`
-  takes an HTML attribute, because "armed" is not one bit — on leolist's
-  homepage `data-nix-leolist-dark` is present and
-  `data-nix-leolist-listings-only` is absent, and both are correct. An
-  any-attribute check passed there and said nothing.
-  - **The wheel-scroll step is the reason it exists.** `window.scrollTo` is the
-    scroll-shaped version of `el.click()`: leolist sets `html {overflow:hidden}`
-    and scrolls its listing column, so `scrollTo` moved a number the page never
-    heard about — `scrollY` stayed `0` through six attempts while an
-    `IntersectionObserver` waited, and a filmstrip of **759 photos measured as
-    zero**. Dispatched wheel events took the same page from **29 images to
-    1201**. `scripts/cdp.mjs` carries the shared helper; it stops when
-    hydration stops growing, and says `STILL GROWING` rather than report a
-    number it knows is short.
-  - `nix run .#watch -- --scroll` runs a shorter sweep after each reload, so a
-    save does not leave you looking at an unhydrated page.
-  - **`--gate '<gridSel>,<unitHref>'` says WHICH signal failed** when a script
-    declines to arm: grids matched, and per grid renders / kids / units / rows /
-    organic share, then whether a pager was found and whether it sits inside the
-    winning grid. It takes the constants rather than knowing them — thumbwall
-    alone has four modules with four sets, and `runXnxxXvideos()` and
-    `runEporner()` do not even share the shape, so the flag fits
-    `runPornhub()` and `runXhamster()` only. When it reports "all signals pass"
-    on a page that did not arm it says so: **suspect the replica, not the
-    script.**
-  - **A page's own exception is not the script's.** An injected script has no
-    source URL — it is `<anonymous>` to the debugger — while every site script
-    has one. Without that split, eporner's own
-    "AbortError: The play() request was interrupted" failed the userscript that
-    had nothing to do with it.
-  - **It matches every marker namespace, and scans by ATTRIBUTE.** There are
-    five, not two: `data-nix-*` (leolist) plus one per thumbwall module —
-    `data-nx-*` (xnxx/xvideos), `data-ep-*` (eporner), `data-xh-*` (xhamster),
-    `data-ph-*` (pornhub). Checking one across all five hosts reported three
-    working modules as declining to arm. Counting by class was wrong too:
-    thumbwall marks the site's OWN cards with `data-<ns>-card` and injects
-    almost no classes, so a class-based count reads ~0 on a page it has fully
-    restyled. Class matching is now restricted to the two prefixes actually
-    used as class names, because `[class*="ph-"]` matches pornhub's own markup.
-  - All four thumbwall modules and leolist were re-verified as **arming**
-    against live pages on 2026-09-29 once the right attribute was checked:
-    pornhub `/video?o=mr` (106 marked nodes), xhamster `/newest` (153),
-    eporner `/most-viewed/` (108), xnxx `/best/2026-08` (1439). Nothing in
-    either userscript needed changing.
-- **The loop stays up on its own.** `scripts/watch-daemon.mjs` supervises it from
-  Claude Code's hooks: started at session start, revived after any `.user.js`
-  edit and at the end of every turn, and left running when the session ends
-  (it detaches to PPID 1, so it outlives the hook that started it).
-  `nix run .#watch-status` and `nix run .#watch-stop` drive it by hand, and
-  `USERSCRIPTS_WATCH=0` switches the auto-start off.
-  - **It never attaches to a browser it did not start.** Typing `nix run .#watch`
-    attaches to whatever answers CDP on the port, which is right when a person
-    asks for it — but a hook doing the same would inject these scripts into
-    whatever Chromium happens to be on 9222, which on the maintainer's machine
-    is their own profile. The daemon tracks what it started in
-    `.nix-browser/watch.json` and declines by name otherwise.
-  - It also refuses to make session start wait on a 361 MB download:
-    `nix build --offline` answers "can this start right now?", and if not it says
-    so instead of fetching.
-- Markdown and spelling gates: `.markdownlint.jsonc` (with `listings/`,
-  `.github/` and `.claude/` extending it for form bodies) and `_typos.toml`,
-  whose three allowances are each a measured false positive — `anc` is an
-  attribute written into the live DOM, `pagin` is a substring selector, and
-  `contener` is the site's own misspelling in an id we have to match.
-
-### Fixed
-
-- **Four paragraphs in this file rendered as `<h1>` headings on GitHub.** An
-  ATX heading may interrupt a paragraph, so a line beginning `#main_list …` or
-  `#view-cont …` was a heading, not prose. The selectors are backticked now.
-- **Three script histories had been merged into `## eporner-thumbwall` and
-  sorted by version number**, which interleaved them and left every affected
-  series non-monotonic. `xnxx-thumbwall` v2.1.0 and v2.2.0 (the releases that
-  folded xvideos.com into it) and `xhamster-thumbwall` v1.1.0 and v1.1.1 are
-  back under their own headings, and the duplicated "Version history for
-  eporner-thumbwall" marker is gone. No prose was edited — the blocks moved
-  whole.
-
-### Changed
-
-- **The documented way to test a change is to install it.** The browser is
-  ungoogled-chromium **152.0.7977.64** with **Violentmonkey 2.48.0** from the
-  Chrome Web Store, and the only channel into a page is the manager's own
-  install path. `CONTRIBUTING.md` gains a **Testing a change** section;
-  `CLAUDE.md`'s two browser sections were rewritten around it; `README.md` no
-  longer offers `nix run .#watch` as the one-command way to try something.
-- **Why, stated as the trade it was.** The CDP lane ran a different browser at a
-  different version against a throwaway profile, so whatever it proved was not
-  what a reader gets. It was measured drifting: a feature was reported "verified
-  on all five hosts" against Chrome for Testing **154** on a machine whose actual
-  browser is **152**, and two of those five hosts turned out to be scroll-locked
-  in ways the rig papered over. thumbwall's own `WHY` block had recorded its
-  original measurements on `Chromium 152.0.7977.64` all along — the real browser.
-- **Measuring a selector is now the script's own job.** `selector-verify.mjs`
-  returned a `GENERATED` verdict mechanically; with no tool, `CONTRIBUTING.md` §
-  Measure the live page carries the rule instead — anchor on ARIA roles, `href`
-  values and data attributes, never a generated class and never `aria-label` or
-  link text, both of which are localised. Log the count from the script behind a
-  debug flag that ships off, and break the selector on purpose to prove the
-  failure mode.
-- **Two findings kept as page facts, not rig facts.** xhamster ships
-  `body.xh-scroll-disabled` (`overflow-y: hidden`) on a clean profile with no
-  dialog behind it, and pornhub holds `scrollHeight === innerHeight` behind its
-  age modal. Both measured 2026-09-29 identical with a script armed and with it
-  torn down, so neither is the script's doing — check the page scrolls at all
-  before blaming a scroll-driven feature.
-- The per-host marked-node counts in `CLAUDE.md`'s script map (106 / 153 / 108 /
-  1439) are labelled as CDP-era figures: orders of magnitude, not numbers to diff
-  against.
-
-- CI's Node is 20 → **22**, matching `nodejs_22` in `flake.nix`, so the npm path
-  and the flake path run ESLint on the same runtime. Node 20 went end-of-life in
-  April 2026 and eslint 10 wants `^20.19 || ^22.13 || >=24`.
-- `.gitignore` ignores `node_modules` without a trailing slash. The old
-  `node_modules/` matched a **directory only**, so the symlink `nix run .#deps`
-  creates was staged by git (measured 2026-09-28).
-- `eslint.config.mjs` also lints `.claude/hooks/**/*.mjs` and the watcher and
-  daemon in `scripts/`. A hook that throws is a hook that has silently stopped
-  guarding, and nothing else would check them.
-- **`no-undef` now applies to repository tooling and hooks.** It was absent from
-  that config block, so a typo'd Node global passed lint and failed at runtime —
-  inside a hook, silently. The explicit globals list is the price of having it.
-- `.gitignore` covers `.nix-browser/` — the project-local browser profile, which
-  is hundreds of megabytes and holds cookies for whatever was under test.
 
 ## leolist-listings-only
 
@@ -245,13 +39,16 @@ Entries are grouped by script. Within a release, use the
   so a renamed `.lst-item` would still have armed and still hidden everything.
   The new gate fails toward **stock**, which is the contract.
 
+
 #### History before 1.65.0
 
 Ported verbatim from the private repository this script came from, in the
 shape it was written there (no dates; the measurement inline). 1.64.0 was the
 move itself - metadata re-pointed at this repository, no logic change.
 
+
 Version history for [`leolist-listings-only.user.js`](./leolist-listings-only.user.js).
+
 
 ### v1.63.0
 
@@ -421,7 +218,7 @@ Left/Right arrows step one photo within the listing you are on. They did nothing
 
 ### v1.51.0
 
-`#main_list` is an allowlist now, not a blocklist. Every child is hidden and only wraps containing a .nix-leolist-row (plus our tail sentinel) are shown, so anything LeoList injects into the list fails closed instead of rendering raw until a rule catches up. The rules need !important, and that is measured rather than defensive: without it the plain rule hid DIV.js-listing-results-count but left DIV.group and SECTION.fa-section visible, which is why the old `#main_list > section` rule never actually worked — a 220px promo section ("Rachel 23 - Mixed City of Toronto") had been rendering between listings the whole time. Verified on a live /personals page: 118 children, 101 visible = the 100 wraps that have rows plus the tail, 0 visible without a row, fa-section and js-listing-results-count both hidden. The now-subsumed `#main_list > section` and `#main_list > :not(div)` rules are gone; the sponsors, safety-tips, pagination and img.huge rules stay because those can also appear outside #main_list, where applyIsland does not reach them. The fullscreen tail rule was raised to !important so it still outranks the allowlist.
+#main_list is an allowlist now, not a blocklist. Every child is hidden and only wraps containing a .nix-leolist-row (plus our tail sentinel) are shown, so anything LeoList injects into the list fails closed instead of rendering raw until a rule catches up. The rules need !important, and that is measured rather than defensive: without it the plain rule hid DIV.js-listing-results-count but left DIV.group and SECTION.fa-section visible, which is why the old `#main_list > section` rule never actually worked — a 220px promo section ("Rachel 23 - Mixed City of Toronto") had been rendering between listings the whole time. Verified on a live /personals page: 118 children, 101 visible = the 100 wraps that have rows plus the tail, 0 visible without a row, fa-section and js-listing-results-count both hidden. The now-subsumed `#main_list > section` and `#main_list > :not(div)` rules are gone; the sponsors, safety-tips, pagination and img.huge rules stay because those can also appear outside #main_list, where applyIsland does not reach them. The fullscreen tail rule was raised to !important so it still outranks the allowlist.
 
 ### v1.50.0
 
@@ -605,7 +402,7 @@ Store a.href not img.src. Signed imgproxy paths cannot be rewritten from 304→1
 
 ### v1.5.0
 
-`#view-cont` full width. The 960px well is the parent .main-list-container.container (measured 2026-08-31, col-left x=276 w=960 on a 1512px viewport); widening #view-cont alone is a no-op.
+#view-cont full width. The 960px well is the parent .main-list-container.container (measured 2026-08-31, col-left x=276 w=960 on a 1512px viewport); widening #view-cont alone is a no-op.
 
 ### v1.4.0
 
@@ -731,6 +528,7 @@ changelog, in the shape they were written (no dates; measured evidence
 inline). `eporner-thumbwall`, `xhamster-thumbwall`, `youporn-thumbwall` and
 `xnxx-thumbwall` were the four separately shipped scripts merged into this
 one file at 3.0.0.
+
 
 Version history for [`thumbwall.user.js`](./thumbwall.user.js) — the merge of
 `xnxx-thumbwall`, `eporner-thumbwall`, `xhamster-thumbwall` and `youporn-thumbwall` into
@@ -1064,10 +862,9 @@ muted.
 ### v3.4.1
 
 **eporner watch-page fix, reported from real usage.** v3.2.0's furniture purge
-named every ad/stats id it found on ONE sampled video (`#video-info`,
-`#adstripe`, `#cutscenes`, `#statisticsdiv`, `#sharediv`, `#reportdiv`,
-`#downloaddiv`, `#commentdiv`, `#movieplayer-box-adv`) - an ALLOWLIST, not
-elimination. On
+named every ad/stats id it found on ONE sampled video (#video-info,
+#adstripe, #cutscenes, #statisticsdiv, #sharediv, #reportdiv, #downloaddiv,
+#commentdiv, #movieplayer-box-adv) - an ALLOWLIST, not elimination. On
 different videos this left a large blue "Advertisement" placeholder
 (anonymous, no id, an ad-rotation slot the sample never rendered) sitting
 between the player and the related wall, and left #inplaylistsdiv visible
@@ -1356,6 +1153,7 @@ After: every non-card child computes `display: none`, `0x0`, on all four shapes.
 
 Verified: 78/78 shapes, 21/21 copies, 31/31 teardown, 20/20 actions.
 
+
 ### v2.2.0
 
 A fourth block survived the v2.1.0 purge, and the reason it did is the finding: every sweep up to here filtered candidates on the node's OWN rendered height, and `#mainBlogPosts` measures **height 0, width 1200** on the index. It is a collapsed float container - its children paint, its box does not measure - the same shape that makes the site's own `#vidresults` compute 0. A height filter could never see it, so re-running the same sweep a fourth time would have returned clean a fourth time while the block stayed on screen. The sweep now tests whether a subtree PAINTS, not whether the node is tall.
@@ -1375,6 +1173,18 @@ After: the corrected sweep returns `[]` on all four shapes - listing, index, tag
 
 Verified: 78/78 shapes, 21/21 copies, 31/31 teardown, 20/20 actions (three consecutive runs - the first attempt reported 2/6, a cold-page flake on the trusted-click rig, not a regression).
 
+
+### v2.2.0
+
+xvideos shipped a **masonry homepage** and a **new search/tag card route** on the same day, and the two together broke the wall on three shapes. Both found from a real "the homepage is broken" report, then measured stock-vs-scripted.
+
+**The black sea (index).** The new shell serves cards `position:absolute` with JS-written inline `left`/`top`, and pins the container's height inline for its own sparse masonry layout. v2.1.0 flipped the cards to `position:relative` (the /todays-selection fix) — which rejoins the grid, but a relative box still HONOURS `left`/`top` as offsets from its slot. So every card sat at its grid cell PLUS its stale masonry coordinate: track 2 at 504 landed at x=1008, alternate cells and whole rows empty, most of the page black. The stale inline container height then left a dead half-page below. Fix: `left/top/right/bottom: auto !important` on the card and `height/min-height: auto !important` on the container — the offsets and the height that only made sense under masonry, neutralised, `!important` because the engine keeps rewriting the inline style.
+
+**Search and tag stopped arming.** The same redesign moved search/tag cards to `/search-video/<opaque base64 blob>` — no `/video.` or `/video-` in the href at all — so the two-route gate matched ZERO organic cards and those shapes stayed stock. This is `F-ONE-CARD-TYPE-TWO-ROUTES` a third time; the WHY block already noted xnxx's own `/search-video` route. Added it to `VIDEO_LINK_SEL` and `ORGANIC_SEL`, scoped to `:scope > div:has()` so a `/search-video` link in chrome cannot pull a non-gallery page into scope.
+
+After: index renders a uniform full-bleed 503x283 grid (was a black sea), document height 4955→2414, search/tag arm at full 1512 width. Verified: **xvideos 168/170** (the two misses are the index pager under the site's infinite-append reflow — a trusted click DOES navigate; the pager's absolute y shifts between hit-test and click on this lazily-appending shape), **xnxx 88/88** — no regression on either xnxx shell.
+
+
 ### v2.1.0
 
 Everything except the grid, the top bar and pagination is now actually gone. v2.0.0 narrowed the SCOPE; this finishes the PURGE inside it.
@@ -1390,6 +1200,34 @@ The anchors are those four ids and three classes rather than a height test, and 
 After: both shapes return only the wall's own ancestors. The index drops from 8792px to 6736px of document. The wall itself is untouched - 77 of 77 cards visible on a listing, 65 of 65 across five containers on the index, pagination present, top bar present, zero horizontal overflow on both.
 
 Verified: 78/78 shapes, 21/21 copies, 31/31 teardown, 20/20 actions.
+
+
+### v2.1.0
+
+**xvideos.com, and it cost three anchors rather than a second script.** The two sites are one operator and ship the same markup — `.mozaique`, `.thumb-block`, `.pagination` — so the question was never "write an xvideos userscript", it was "how much of this one is actually about xnxx?". The answer, measured: about five lines.
+
+The experiment came first. Injected into xvideos unchanged, the v2.0.0 build measured an organic share of 0 on every shape and **correctly declined to arm**: stock page, no errors, no overflow, cards untouched. That is the degrade-to-stock contract doing its job, and it is also how a sibling site announces itself.
+
+The single character behind it: xnxx serves a card as `/video-<id>/<slug>`, xvideos as `/video.<id>/<slug>`. The gate read only the first. So did `gridReadTitle`, in a second place — which is why on xvideos the cards dressed correctly and the hover title was **silently absent on every shape**. Both routes now live in one `VIDEO_LINK_SEL` constant so they cannot drift apart again.
+
+| What | xnxx | xvideos |
+|---|---|---|
+| card route | `/video-` | `/video.` |
+| top bar | `#header`, both shells | `#header` on `/best`; `div.head__top` elsewhere |
+| second nav row | — | `div.head__menu-line` (purged: chrome) |
+| sort/filter control | `div.infobar` (month chooser, 323 links) | `.listing_filters` + `.date-links` |
+| body inline padding | 0 | **80px** |
+
+That last row was the headline defect. The bleed walk widens every ancestor between the grid and `<body>` and stops there, because widening the body is not a thing — and xnxx's body has no inline padding, so it never mattered. xvideos' `body.body--home` computes `padding-left/right: 80px`, and the wall measured **1352 inside a 1512 viewport, 2400 inside 2560**: short by exactly twice the padding at every width. Physical longhands, not `padding-inline` — a logical/physical pair resolves by cascade ORDER, not specificity.
+
+THE FOCUS REVEAL IS NO LONGER `:focus-within`, AND THAT IS MEASURED. xvideos' index focuses an `INPUT` inside the bar at load — `activeElement` INPUT, bar `:focus-within` true, no `[autofocus]` attribute, so it is JS-driven. A `:focus-within` rule is therefore true from load and **the bar never hides**: measured rest opacity 1 on the index while every other shape measured 0. The reveal is now gated on the reader having acted, exactly as the sibling eporner script does it. The keyboard route is not weakened — the first Tab IS the act that opens the gate, and the same keystroke lands focus in the bar.
+
+Also new, and a class rather than an instance: **non-card children of the grid itself** are hidden — `div.clearfix` on the index, a bare `<script>` as the first child on `/best`. Every keeper-based sweep is blind to these, because it asks "is this inside a keeper?" and the grid IS a keeper. The rule hides by elimination, so it is gated on the container actually holding a card (`:has(> div.thumb-block)`): rename the card and the gate fails and the rule stops matching, rather than blanking the wall.
+
+`xvideos.red` joins `xnxx.gold` and `zline0.com` in the bar-promo purge, and it arrived through the CONTRAST audit rather than a promo sweep — its "Premium" label is white on brand red `rgb(222, 38, 0)`, 4.36:1, the single failing text pair on three shapes. `a[href*="/account/create"]` is deliberately NOT taken: that is the site's own signup, a legitimate function of a bar we keep.
+
+Verified with page-lab's redesign runner at document-start, trusted events, four xvideos shapes and two xnxx shapes: **xvideos 171/171, xnxx 88/88.** Full-bleed at 1280/1512/1920/2560, no overflow, out-of-scope shapes byte-identical to a stock load.
+
 
 ### v2.0.0
 
@@ -1425,6 +1263,30 @@ Two earlier measurements of this reported "works identically stock and scripted"
 
 Verified: 121/121 shapes, 15/15 copies, 20/20 teardown. The actions suite reads 11/15 on roughly one run in four and 15/15 otherwise, identically before and after this change - the site serves a smartpop that navigates the tab away, which presents as a dead input rig.
 
+### v1.1.1
+
+The hover overlay showed the video LENGTH instead of the title — bottom-left, "12:34" where a name belongs. Cards hydrate in stages, and the title reader ran in whatever stage a pass caught: in one window the duration badge is hydrated inside the image link while the title anchor is still empty, so the duration won the longest-candidate contest, and the dress-once early-return froze it as the title forever. In the lab, passes landed after hydration and read correct titles every time — which is why v1.1.0 shipped clean and the defect only appeared in real use.
+
+Two changes. First, what counts as a title is now stated: a title has letters; markup is never a title; a bare duration (`^[\d:.\s]+$`) is never a title; and the anchor's `title` ATTRIBUTE — the semantic field — beats textContent when present. Second, the early-return became an UPGRADE path: a card dressed before hydration carries a slug-derived title marked `data-xh-tsrc="slug"`, and when the real attribute arrives a later pass replaces it, once.
+
+Measured across 148 overlays on three shapes: zero duration-shaped, zero markup, zero letterless; sources attr/text/slug all present, every slug entry upgrade-eligible. Preview, template and furniture checks unchanged from v1.1.0; acceptance suite 154/156 with the two misses reproducing as the known cold-page pager flake (pagination group alone: 16/16, twice).
+
+
+### v1.1.0
+
+One card width for every site, and a watch page that is a player and a gallery.
+
+The card clamp is now identical to the sibling script's: a per-site value meant the same reader met a 319px card on one site and a 503px card on the next, which reads as two unrelated redesigns rather than one. Measured at 1512 this yields 503x283 here, matching exactly. The min(...,100%) wrap stays, and is what keeps a 300px floor plus the gap from overflowing a 320px viewport.
+
+The watch page loses its furniture. Measured at 1512 under the script: #movieplayer-box-adv at 760px starting at the player's own y, three NTV boxes of 250px stacked inside it, #adPlayerIfr at 250px, #commentdiv at 616px, and #morerelated as a bare 30px label above the grid. All gone, gated on the same shell-ready attribute as every other removal so a page where the shell never mounted renders stock rather than stripped. The player then takes the width the stock box was already reserving for the ad column beside it: 1208 to 1280 wide, 680 to 738 tall, capped in dvh so a mobile URL bar cannot clip it.
+
+Reported alongside these and NOT reproduced: hover autoplay. Measured on a listing, stock versus scripted, the preview behaves identically - readyState 4, paused false, 319x180 at opacity 1, and the video is the topmost element at the card centre with nothing of ours covering it. The mechanism is the site's own and our CSS does not touch it. The difference is more likely to be an ad blocker, which on the sibling site was measured changing an entire listing into ad units.
+
+Six measurement errors of my own this round are worth recording, because five were the same family and the sixth had its answer already written down. A CDP document-start probe injects EARLIER than a userscript manager's document-start, so document.documentElement is still null and the script's own guard returns - the page then reports stock and reads as a total failure. page-lab's harness wraps the body for exactly this, and the wrap is skipped by passing the body as an openLab option rather than through addDocStart. Every reading taken before that was corrected - including a footer that looked un-removed - was against a script that had never run.
+
+
+Version history for [`eporner-thumbwall.user.js`](./eporner-thumbwall.user.js).
+
 ### v1.1.0
 
 Two defects from first real use — no hover preview, and the thumbnail template visibly broken — and they were **one bug**. v1.0.0 absolutely-filled EVERY direct child of a card; a card's children are not one image link. Measured on `/newest`: the date block and the title/info block were both stretched to the full 503x283 tile and stacked OVER the image — the visible template violation — and the stretched info block sat on top of the image link, **eating the pointer**. The site injects its hover preview INSIDE that link (measured stock: `card > a.video-thumb__image-container > video`, playing at t=2.5s under a trusted hover), so a pointer that never reached the link never spawned a preview. One stretched sibling broke the template AND the autoplay at once.
@@ -1436,6 +1298,7 @@ A third defect surfaced by the same measurement: on unhydrated cards, an anchor'
 Honest accounting: v1.0.0's 155/155 verification **never exercised the hover preview under the script** — the suite checks the overlay, the bar and the geometry, not the site's own preview behaviour. That check exists now (trusted hover, preview playing INSIDE the card's link, per shape) and is part of this release's evidence.
 
 Verified: preview playing at 503x283 on all four shapes under trusted hover, ratio 1.78, zero visible furniture, zero markup titles — and the acceptance suite again at **155/155**.
+
 
 ### v1.0.0
 
@@ -1469,26 +1332,6 @@ Also recorded: `.ep-thumbwall-meta` is carried in the own-UI list from the recon
 
 Version history for [`xhamster-thumbwall.user.js`](./xhamster-thumbwall.user.js).
 
-### v1.1.1
-
-The hover overlay showed the video LENGTH instead of the title — bottom-left, "12:34" where a name belongs. Cards hydrate in stages, and the title reader ran in whatever stage a pass caught: in one window the duration badge is hydrated inside the image link while the title anchor is still empty, so the duration won the longest-candidate contest, and the dress-once early-return froze it as the title forever. In the lab, passes landed after hydration and read correct titles every time — which is why v1.1.0 shipped clean and the defect only appeared in real use.
-
-Two changes. First, what counts as a title is now stated: a title has letters; markup is never a title; a bare duration (`^[\d:.\s]+$`) is never a title; and the anchor's `title` ATTRIBUTE — the semantic field — beats textContent when present. Second, the early-return became an UPGRADE path: a card dressed before hydration carries a slug-derived title marked `data-xh-tsrc="slug"`, and when the real attribute arrives a later pass replaces it, once.
-
-Measured across 148 overlays on three shapes: zero duration-shaped, zero markup, zero letterless; sources attr/text/slug all present, every slug entry upgrade-eligible. Preview, template and furniture checks unchanged from v1.1.0; acceptance suite 154/156 with the two misses reproducing as the known cold-page pager flake (pagination group alone: 16/16, twice).
-
-### v1.1.0
-
-One card width for every site, and a watch page that is a player and a gallery.
-
-The card clamp is now identical to the sibling script's: a per-site value meant the same reader met a 319px card on one site and a 503px card on the next, which reads as two unrelated redesigns rather than one. Measured at 1512 this yields 503x283 here, matching exactly. The min(...,100%) wrap stays, and is what keeps a 300px floor plus the gap from overflowing a 320px viewport.
-
-The watch page loses its furniture. Measured at 1512 under the script: #movieplayer-box-adv at 760px starting at the player's own y, three NTV boxes of 250px stacked inside it, #adPlayerIfr at 250px, #commentdiv at 616px, and #morerelated as a bare 30px label above the grid. All gone, gated on the same shell-ready attribute as every other removal so a page where the shell never mounted renders stock rather than stripped. The player then takes the width the stock box was already reserving for the ad column beside it: 1208 to 1280 wide, 680 to 738 tall, capped in dvh so a mobile URL bar cannot clip it.
-
-Reported alongside these and NOT reproduced: hover autoplay. Measured on a listing, stock versus scripted, the preview behaves identically - readyState 4, paused false, 319x180 at opacity 1, and the video is the topmost element at the card centre with nothing of ours covering it. The mechanism is the site's own and our CSS does not touch it. The difference is more likely to be an ad blocker, which on the sibling site was measured changing an entire listing into ad units.
-
-Six measurement errors of my own this round are worth recording, because five were the same family and the sixth had its answer already written down. A CDP document-start probe injects EARLIER than a userscript manager's document-start, so document.documentElement is still null and the script's own guard returns - the page then reports stock and reads as a total failure. page-lab's harness wraps the body for exactly this, and the wrap is skipped by passing the body as an openLab option rather than through addDocStart. Every reading taken before that was corrected - including a footer that looked un-removed - was against a script that had never run.
-
 ### v1.0.0
 
 A full-bleed wall for xhamster gallery pages. **701 lines against the sibling scripts' 2576 and 1500**, and the difference is one measurement.
@@ -1520,6 +1363,7 @@ Four defects found during the build, each by measurement rather than by looking:
 
 Verified with page-lab's redesign runner at document-start, trusted events, four shapes: **155/155**. Full-bleed at 1280/1512/1920/2560, zero strays, zero non-card children in the wall, overlays on every card, the bar hidden at rest and revealed by pointer and by keyboard, and the watch page and `/photos` byte-identical to a stock load.
 
+
 ## youporn-thumbwall
 
 Version history for [`youporn-thumbwall.user.js`](./youporn-thumbwall.user.js).
@@ -1539,6 +1383,7 @@ A full-bleed wall for youporn gallery pages, and the first script in this repo t
 The homepage stacks FOUR grids (recommended + three most-recent); this script marks every qualifying `full-row-thumbs` and seeds the elimination purge from all of them, rather than picking one winner. Chrome is purged by elimination (footer is class-less, one content block hashed), scoped to marked ancestors so a failed gate renders stock.
 
 Verified: armed on index (3–4 grids), category and search; the watch page left stock; full-bleed 1512 with no overflow; the wall rendered and screenshot-confirmed as a clean 3-column grid on the native dark ground; the top bar hidden at rest and revealed by both pointer and keyboard. Acceptance suite **111/116** — the five misses are all one root cause, youporn's `visibility:hidden` lazy loading interacting with a lab that does not fetch thumbnail images: stock and broken-anchor states read blank because stock youporn is itself blank without image loads, and the pager check clicks a `javascript:void(0)` control button because the engine ships its real numbered links below the fold and `visibility:hidden`. The real numbered `?page=N` links navigate for a user, and the wall renders — both confirmed by direct measurement and screenshot.
+
 
 ## xnxx-thumbwall
 
@@ -1572,42 +1417,6 @@ Horizontal overflow, desktop range: the STOCK shell B `/hits` page overflows 90p
 
 Verified, all at document-start through the harness wrap rather than a raw injection: 59/59 on the new scope suite, 39/39 on the shape sweep, 40/40 on the wall detail suite, 12/12 on lifecycle - THREE document-start copies producing exactly one adopted sheet, one marked grid host and one overlay per card, and a teardown whose fingerprint is identical to the stock page - and the colour audit clean on both shells with the watch page measured NOT repainted at all.
 
-### v2.2.0
-
-xvideos shipped a **masonry homepage** and a **new search/tag card route** on the same day, and the two together broke the wall on three shapes. Both found from a real "the homepage is broken" report, then measured stock-vs-scripted.
-
-**The black sea (index).** The new shell serves cards `position:absolute` with JS-written inline `left`/`top`, and pins the container's height inline for its own sparse masonry layout. v2.1.0 flipped the cards to `position:relative` (the /todays-selection fix) — which rejoins the grid, but a relative box still HONOURS `left`/`top` as offsets from its slot. So every card sat at its grid cell PLUS its stale masonry coordinate: track 2 at 504 landed at x=1008, alternate cells and whole rows empty, most of the page black. The stale inline container height then left a dead half-page below. Fix: `left/top/right/bottom: auto !important` on the card and `height/min-height: auto !important` on the container — the offsets and the height that only made sense under masonry, neutralised, `!important` because the engine keeps rewriting the inline style.
-
-**Search and tag stopped arming.** The same redesign moved search/tag cards to `/search-video/<opaque base64 blob>` — no `/video.` or `/video-` in the href at all — so the two-route gate matched ZERO organic cards and those shapes stayed stock. This is `F-ONE-CARD-TYPE-TWO-ROUTES` a third time; the WHY block already noted xnxx's own `/search-video` route. Added it to `VIDEO_LINK_SEL` and `ORGANIC_SEL`, scoped to `:scope > div:has()` so a `/search-video` link in chrome cannot pull a non-gallery page into scope.
-
-After: index renders a uniform full-bleed 503x283 grid (was a black sea), document height 4955→2414, search/tag arm at full 1512 width. Verified: **xvideos 168/170** (the two misses are the index pager under the site's infinite-append reflow — a trusted click DOES navigate; the pager's absolute y shifts between hit-test and click on this lazily-appending shape), **xnxx 88/88** — no regression on either xnxx shell.
-
-### v2.1.0
-
-**xvideos.com, and it cost three anchors rather than a second script.** The two sites are one operator and ship the same markup — `.mozaique`, `.thumb-block`, `.pagination` — so the question was never "write an xvideos userscript", it was "how much of this one is actually about xnxx?". The answer, measured: about five lines.
-
-The experiment came first. Injected into xvideos unchanged, the v2.0.0 build measured an organic share of 0 on every shape and **correctly declined to arm**: stock page, no errors, no overflow, cards untouched. That is the degrade-to-stock contract doing its job, and it is also how a sibling site announces itself.
-
-The single character behind it: xnxx serves a card as `/video-<id>/<slug>`, xvideos as `/video.<id>/<slug>`. The gate read only the first. So did `gridReadTitle`, in a second place — which is why on xvideos the cards dressed correctly and the hover title was **silently absent on every shape**. Both routes now live in one `VIDEO_LINK_SEL` constant so they cannot drift apart again.
-
-| What | xnxx | xvideos |
-|---|---|---|
-| card route | `/video-` | `/video.` |
-| top bar | `#header`, both shells | `#header` on `/best`; `div.head__top` elsewhere |
-| second nav row | — | `div.head__menu-line` (purged: chrome) |
-| sort/filter control | `div.infobar` (month chooser, 323 links) | `.listing_filters` + `.date-links` |
-| body inline padding | 0 | **80px** |
-
-That last row was the headline defect. The bleed walk widens every ancestor between the grid and `<body>` and stops there, because widening the body is not a thing — and xnxx's body has no inline padding, so it never mattered. xvideos' `body.body--home` computes `padding-left/right: 80px`, and the wall measured **1352 inside a 1512 viewport, 2400 inside 2560**: short by exactly twice the padding at every width. Physical longhands, not `padding-inline` — a logical/physical pair resolves by cascade ORDER, not specificity.
-
-THE FOCUS REVEAL IS NO LONGER `:focus-within`, AND THAT IS MEASURED. xvideos' index focuses an `INPUT` inside the bar at load — `activeElement` INPUT, bar `:focus-within` true, no `[autofocus]` attribute, so it is JS-driven. A `:focus-within` rule is therefore true from load and **the bar never hides**: measured rest opacity 1 on the index while every other shape measured 0. The reveal is now gated on the reader having acted, exactly as the sibling eporner script does it. The keyboard route is not weakened — the first Tab IS the act that opens the gate, and the same keystroke lands focus in the bar.
-
-Also new, and a class rather than an instance: **non-card children of the grid itself** are hidden — `div.clearfix` on the index, a bare `<script>` as the first child on `/best`. Every keeper-based sweep is blind to these, because it asks "is this inside a keeper?" and the grid IS a keeper. The rule hides by elimination, so it is gated on the container actually holding a card (`:has(> div.thumb-block)`): rename the card and the gate fails and the rule stops matching, rather than blanking the wall.
-
-`xvideos.red` joins `xnxx.gold` and `zline0.com` in the bar-promo purge, and it arrived through the CONTRAST audit rather than a promo sweep — its "Premium" label is white on brand red `rgb(222, 38, 0)`, 4.36:1, the single failing text pair on three shapes. `a[href*="/account/create"]` is deliberately NOT taken: that is the site's own signup, a legitimate function of a bar we keep.
-
-Verified with page-lab's redesign runner at document-start, trusted events, four xvideos shapes and two xnxx shapes: **xvideos 171/171, xnxx 88/88.** Full-bleed at 1280/1512/1920/2560, no overflow, out-of-scope shapes byte-identical to a stock load.
-
 ### v2.0.0
 
 The same two scope decisions as the sibling script, and here they delete a third of the file. Major bump because it is subtractive by intent: pages this script used to restyle are now left completely alone.
@@ -1627,6 +1436,7 @@ Verified: 165 checks, 0 failures - wall and full bleed on the four gallery shape
 Known: profile and channel pages now render stock. Their rendered gallery links /pornstar/... rather than /video-, and the cards that do carry video links sit under a display:none parent, so they fail the gate - which is the intended behaviour for a page that is not the surface in scope. The revealed top bar overlays the first card row rather than pushing it down; that is what frees the band for the wall.
 
 3763 lines to 2576.
+
 
 ### v1.7.0
 
