@@ -91,7 +91,25 @@ function parse(file) {
   if (${keys.has('noframes') ? 'true' : 'false'} && window.top !== window.self) return;
   var __m = [${regexes.map((r) => `new RegExp(${JSON.stringify(r.source)})`).join(',')}];
   if (__m.length && !__m.some(function(r){ return r.test(location.href); })) return;
+  var __run = function(){
 ${body}
+  };
+  // addScriptToEvaluateOnNewDocument runs EARLIER than a manager's
+  // document-start. Measured 2026-09-29 on leolist.cc: at injection time
+  // documentElement is null, document.childNodes.length is 0 and readyState is
+  // "loading" — the document is completely empty. A Chrome content script at
+  // document_start runs a moment later, once the parser has created <html> and
+  // before any other DOM, and a userscript may rely on that; this repository's
+  // do (leolist-listings-only touches documentElement.dataset immediately and
+  // died with "Cannot read properties of null"). So wait for <html> rather than
+  // running earlier than the thing being reproduced.
+  if (document.documentElement) { __run(); return; }
+  var __o = new MutationObserver(function(){
+    if (!document.documentElement) return;
+    __o.disconnect();
+    __run();
+  });
+  __o.observe(document, { childList: true });
 })();`;
 
   return {
