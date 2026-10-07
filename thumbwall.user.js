@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Pornhub, XVideos, XNXX, xHamster & Eporner – Clean Widescreen Gallery
 // @namespace    izzykatt.ca
-// @version      5.0.0
+// @version      5.1.0
 // @description  Uncluttered full-width thumbnail wall for pornhub, xnxx, xvideos, eporner and xhamster. On gallery pages with a multi-row hover-preview grid and real pagination, all but the cards and pager is hidden, the header autohides until the pointer nears the top, and the site's own dark theme is used or restored. Video pages become player + info strip (title, channel, like, subscribe) + related grid. No infinite scroll, filters, downloads or network calls; every other page is left stock.
 // @author       Izzy Katt
 // @license      MIT
@@ -142,9 +142,21 @@
      row of the wall does not keep the bar open by accident. Tune HERE.
      The slack is the close hysteresis (see each module's WHY block): the
      bar shuts only once the pointer is this far below its measured bottom
-     edge, so it does not snap closed the instant you move onto it. */
+     edge, so it does not snap closed the instant you move onto it.
+
+     SCROLL_DELTA_MIN joined the other two 2026-09-30, when all four hosts
+     switched from pointer-proximity reveal to scroll-direction reveal (up
+     shows, down hides - the standard pattern). BAND is reused unchanged for
+     "always shown this close to the true top", regardless of direction;
+     SLACK stops applying wherever a host no longer measures the bar's own
+     bottom edge (nothing left that needs pointer-vs-bar hysteresis once
+     the pointer is out of the loop). DELTA_MIN is the new one: the dead
+     zone a scroll sample's delta must clear before it counts as a
+     direction, so trackpad sub-pixel noise on a stationary page cannot
+     flicker the attribute. */
   const NIX_TOPBAR_BAND = 48;
   const NIX_TOPBAR_SLACK = 8;
+  const NIX_TOPBAR_SCROLL_DELTA_MIN = 6;
 
   /* =========================================================================
      THE ENGINE KIT — used by the xhamster module.
@@ -210,21 +222,31 @@
 
   /**
    * The autohiding top bar: hidden at rest (opacity, never display — a
-   * display:none bar cannot take focus), revealed by the pointer within
-   * `band` px of the top edge, and by a KEYBOARD-ACTED focus — never
-   * :focus-within, which a site that autofocuses a control at load makes
-   * true from the first paint, pinning the bar open forever.
+   * display:none bar cannot take focus), revealed by SCROLL DIRECTION (up
+   * shows, down hides - the standard pattern, replacing the original
+   * pointer-proximity reveal 2026-09-30) and by a KEYBOARD-ACTED focus —
+   * never :focus-within, which a site that autofocuses a control at load
+   * makes true from the first paint, pinning the bar open forever.
+   *
+   * `slack` is no longer read here - it existed only to give the OLD
+   * pointer reveal hysteresis against the bar's own measured bottom edge,
+   * a concept scroll direction has no equivalent of. Kept in `cfg` rather
+   * than removed from both call sites: harmless if unused, and this is
+   * exactly the kind of trade the original NIX_TOPBAR_SLACK comment already
+   * anticipated could stop applying to a given host.
    */
   function makeTopbar(cfg) {
-    const { topAttr, topFocusAttr, barSel, band, slack } = cfg;
+    const { topAttr, topFocusAttr, barSel, band } = cfg;
     const topSet = (on) => root().toggleAttribute(topAttr, on);
     const topFocusSet = (on) => root().toggleAttribute(topFocusAttr, on);
-    function onMove(life, e) {
-      if (e.clientY <= band) { topSet(true); return; }
-      if (!root().hasAttribute(topAttr)) { return; }
-      const bar = document.querySelector(barSel);
-      const bottom = bar ? bar.getBoundingClientRect().bottom : 0;
-      if (e.clientY > bottom + slack) { topSet(false); }
+    let lastScrollY = 0;
+    function onScroll() {
+      const y = window.scrollY;
+      const delta = y - lastScrollY;
+      lastScrollY = y;
+      if (y <= band) { topSet(true); return; }
+      if (delta > NIX_TOPBAR_SCROLL_DELTA_MIN) { topSet(false); return; }
+      if (delta < -NIX_TOPBAR_SCROLL_DELTA_MIN) { topSet(true); }
     }
     function syncFocus(life) {
       if (!life.acted) { topFocusSet(false); return; }
@@ -237,7 +259,7 @@
       const bar = document.querySelector(barSel);
       if (bar && e.target && bar.contains(e.target)) { topFocusSet(true); }
     }
-    return { topSet, topFocusSet, onMove, syncFocus, onKeydown };
+    return { topSet, topFocusSet, onScroll, syncFocus, onKeydown };
   }
 
   function makeSchedule(getL, applyFn) {
@@ -455,13 +477,36 @@
    site's own header JS rewrites #header to position:relative the moment
    input#k takes focus. Author !important outranks the inline style it sets.
 
-   REVEAL IS POINTER-DRIVEN, NOT SCROLL-DRIVEN. The JS writes
-   html[data-nx-topbar] when a pointermove reports clientY <= 4, and removes it
-   when the pointer passes 8px below the bar's own measured bottom edge - read
-   from the DOM at that moment, never assumed, because the two shells are the
-   same 106px today and nothing guarantees they stay that way. Keyboard users
-   need no attribute at all: #header:focus-within is a second, independent
-   reveal selector, so tabbing into the page brings the bar down.
+   REVEAL IS SCROLL-DRIVEN as of 2026-09-30 (was pointer-proximity before -
+   see git history for that version). The JS writes html[data-nx-topbar] on
+   scroll UP past NIX_TOPBAR_SCROLL_DELTA_MIN, removes it on scroll DOWN past
+   the same threshold, and always sets it within TOPBAR_EDGE (= the shared
+   NIX_TOPBAR_BAND) of the true top regardless of direction - the standard
+   pattern. The bottom-edge-hysteresis measurement this paragraph used to
+   describe no longer applies: nothing here reads the bar's own
+   getBoundingClientRect any more, because scroll direction has no
+   pointer-vs-bar-edge concept to be hysteretic about. Keyboard users need no
+   attribute at all: #header:focus-within is a second, independent reveal
+   selector, so tabbing into the page brings the bar down.
+
+   XVIDEOS IS TWO ROWS WHERE XNXX IS ONE, AND SINCE 2026-10-06 THE BAR IS A
+   GENERATED WRAPPER. xvideos' index/search/tag shells ship div.head__top and
+   div.head__menu-line as SIBLINGS under <body>, not nested in a header node.
+   The module used to keep the first and purge the second, and positioned the
+   first directly - which produced the two defects this entry records:
+
+     - NO BACKGROUND. Measured stock 2026-10-06, logged out, 1497px: BOTH rows
+       compute background-color rgba(0, 0, 0, 0). The only fill under that
+       header is <body>'s. Fine in flow; a fixed copy of it has the wall
+       scrolling THROUGH it.
+     - HALF THE NAVIGATION MISSING. div.head__menu-line is the site's own
+       horizontal menu, not decoration.
+
+   topbarWrap() now puts both rows inside one generated [data-nx-bar], which it
+   also removes again on stand-down. #header is that node on xnxx, the wrapper
+   is that node on xvideos, and every rule from here down names the pair - so
+   the sheet positions, paints and fades exactly ONE box on both hosts. The
+   bar is 71px there now (40 + 30 + 1px border), measured 2026-10-06.
 
    ---------------------------------------------------------------------------
    7. SHELL B: body.nb-thumbs-cols-* SILENTLY BEATS AN UN-!important GRID RULE
@@ -1889,9 +1934,19 @@ html[data-nx-thumbwall] body {
    .listing_filters + .date-links below, and goes for the same reason: the
    keep-list is the grid, the autohiding bar and pagination, and a filter is
    none of those. It is absent on every other shape, so it is anchored by class
-   rather than by a structural test. */
+   rather than by a structural test.
+
+   div.head__menu-line LEFT THIS LIST 2026-10-06. It was purged here as "a
+   second navigation row, which under the keep-list is chrome" - and that
+   reading was wrong twice over. It is the site's OWN horizontal menu (Best
+   Videos / Categories / Channels / Pornstars / Live Cams / Dating /
+   Girlfriend / Games / Profiles, measured on the index), which is navigation
+   of exactly the kind the bar is kept FOR; and the stated reason for purging
+   it - "rather than stacked under a bar whose height would then have to be
+   measured at runtime" - stopped applying the moment the two rows went into
+   ONE wrapper (topbarWrap, section 6), where normal block flow stacks them
+   and nothing measures anything. */
 html[data-nx-thumbwall] div.infobar,
-html[data-nx-thumbwall] div.head__menu-line,
 html[data-nx-thumbwall] #footer,
 html[data-nx-thumbwall] footer { display: none !important; }
 
@@ -1934,11 +1989,17 @@ html[data-nx-thumbwall] :is(p, div, li, span):has(> a[href*="pmsc=header_adblock
    number 6 on the index, 7 on a search page and 108 on a channel page, and most
    of them live in a category list rather than in chrome. Hiding them all would
    reach into content. Only the bar's own entry is taken. */
-html[data-nx-thumbwall] :is(#header, div.head__top) a[href*="zline0.com"],
-html[data-nx-thumbwall] :is(#header, div.head__top) a[href*="xnxx.gold"],
-html[data-nx-thumbwall] :is(#header, div.head__top) a[href*="xvideos.red"] {
+html[data-nx-thumbwall] :is(#header, [data-nx-bar]) a[href*="zline0.com"],
+html[data-nx-thumbwall] :is(#header, [data-nx-bar]) a[href*="xnxx.gold"],
+html[data-nx-thumbwall] :is(#header, [data-nx-bar]) a[href*="xvideos.red"] {
   display: none !important;
 }
+/* SCOPE WIDENED 2026-10-06, from div.head__top to the whole wrapper. The scope
+   was never "the search row" - it was "the bar", and the bar was the search row
+   only for as long as that was all of it that survived. The menu row carries a
+   "RED videos" entry (measured on the index) which is the SAME xvideos.red
+   property this rule already takes out of the row above; leaving it would have
+   hidden the promo in one half of one bar and kept it in the other. */
 /* xvideos.red is the same shape as xnxx.gold - an off-site premium property
    reached through a ?pmsc= campaign parameter - and it arrived here through the
    CONTRAST audit rather than a promo sweep: its "Premium" label is white on the
@@ -2040,8 +2101,39 @@ html[data-nx-thumbwall] #e-banner-game { display: none !important; }
    the :focus-within reveal below work rather than being decoration.
 
    display:none was rejected for the same reason: a display:none bar cannot be
-   focused, so a keyboard user would have no route to the search box at all. */
-html[data-nx-thumbwall] :is(#header, div.head__top) {
+   focused, so a keyboard user would have no route to the search box at all.
+
+   THE ANCHOR IS [data-nx-bar], NOT div.head__top, AS OF 2026-10-06. On xnxx
+   the wrapper IS #header (one node, nothing to wrap). On xvideos topbarWrap()
+   puts div.head__top and div.head__menu-line inside one generated
+   [data-nx-bar], so both shells present the identical shape to every rule
+   below: ONE box to position, ONE background to paint, ONE opacity to fade.
+   Writing the two xvideos rows as two separately-fixed boxes was rejected -
+   the second one's 'top' is the first one's HEIGHT, which CSS cannot read, so
+   it would have taken either a hardcoded number or a ResizeObserver feeding a
+   custom property (a runtime loop for something normal block flow does for
+   free). A hardcoded number is not merely brittle, it is WRONG AT A SECOND
+   WIDTH TODAY: measured 2026-10-06 on the stock index, .head__top is 40px at
+   both widths but .head__menu-line is 30px at 1497 and 46px at 1000, so the
+   wrapper measures 71px and 87px respectively. CSS anchor positioning
+   expresses the relationship exactly and was rejected too: Chrome-only today,
+   and this file ships to a fork whose readers include Firefox.
+
+   THE BACKGROUND IS OURS BECAUSE THE SITE HAS NONE - IN EITHER THEME. Measured
+   stock 2026-10-06 on the logged-out index, twice: with <body> WHITE
+   (rgb(255,255,255), 1497px) and with <body> DARK (rgb(22,22,22), 1000px, the
+   site's own dark theme), div.head__top and div.head__menu-line BOTH compute
+   background-color rgba(0, 0, 0, 0). The only colour under that header is
+   <body>'s own, which works perfectly while the bar is in flow and not at all
+   once it is fixed over a scrolling wall. The site's single
+   'body .head__top{background-color:#fff}' rule is dead on this shell: a later
+   'body .head__top{position:relative}' wins the position and nothing restores
+   the fill. So a transparent bar is not a regression we introduced in the
+   paint - it is what a fixed copy of this header always was, in light mode and
+   in dark, and the fill has to come from the theme. --nx-surface is the
+   dominant surface token, the same one every other panel in this file sits
+   on. */
+html[data-nx-thumbwall] :is(#header, [data-nx-bar]) {
   position: fixed !important;
   top: 0 !important;
   left: 0 !important;
@@ -2049,7 +2141,118 @@ html[data-nx-thumbwall] :is(#header, div.head__top) {
   z-index: 9999990;
   opacity: 0;
   pointer-events: none;
+  background-color: var(--nx-surface);
+  border-bottom: 1px solid var(--nx-edge);
 }
+
+/* THE TWO ROWS, ONCE THEY ARE INSIDE THE WRAPPER. Each is normalised rather
+   than restyled - the wrapper now owns position, width and fill, so the rows
+   must stop claiming any of the three:
+
+     position  div.head__top is position:relative z-index:240 in stock and
+               div.head__menu-line position:relative z-index:230. Harmless in
+               flow; inside a fixed parent they are just two more stacking
+               contexts for no reason.
+     width     body .width-full-body is 'margin:0 -80px; width:calc(100% +
+               160px)' - the site's own break-out from <body>'s 80px inline
+               padding. This file ZEROES that padding (see the body rule
+               above), so the break-out stops compensating for anything and
+               starts overhanging: measured x=-80, width=1528 in a 1448px
+               viewport under the script on 2026-10-06, i.e. the bar's content
+               sat 80px left of where it belongs. Restoring auto width inside
+               the wrapper is what re-centres it.
+     shadow    div.head__menu-line ships 'box-shadow:0 0 20px -10px rgba(0,0,0,
+               .2)' to lift itself off a WHITE page. On the dark surface it is
+               invisible at best; the wrapper's own border-bottom is the
+               separator now. */
+html[data-nx-thumbwall] [data-nx-bar] > div.head__top,
+html[data-nx-thumbwall] [data-nx-bar] > div.head__menu-line {
+  position: static !important;
+  margin: 0 !important;
+  width: auto !important;
+  max-width: none !important;
+  box-shadow: none !important;
+}
+
+/* THE HOVER AND FLYOUT PAINT, AND WHY IT NEEDED ITS OWN BLOCK (2026-10-06,
+   reported against the first cut of the wrapper: "nested menus when they
+   hover, the BG is white, so menu items are not legible").
+
+   THE REPAINT IS BLIND TO A STATE THAT DOES NOT EXIST YET. nxRepaint reads
+   COMPUTED styles off the live DOM and rewrites what it finds - which is only
+   ever the AT-REST paint. A :hover rule paints nothing until a pointer is on
+   the element, so there is nothing for a runtime contrast pass to read, and
+   the text colour it already set stays light while the site swaps the surface
+   underneath to white. Light on white. That is a whole CLASS of bug a runtime
+   repainter cannot reach, and the only fix for it is a stylesheet rule.
+
+   WHY IT ONLY SHOWS FOR SOME READERS: xvideos ships TWO stylesheets chosen by
+   the session_ath cookie - css/default/main.css (light) and
+   main-black-base.css + main-black-specific.css (dark). Measured 2026-10-06:
+   on session_ath=dark the flyout computes rgb(22,22,22) and reads fine, which
+   is why four shells of probing missed this entirely. The LIGHT sheet is where
+   the white lives, and these are its rules, enumerated from the sheet itself
+   rather than guessed:
+
+     .notouch body:not(.body--account) .head__menu-line a:hover
+         background #fff, box-shadow 0 0 0 1px #eee
+     body:not(.body--account) .head__menu-line .with-sub-list:hover .sub-list
+         background #fff
+     .notouch body:not(...) ... .with-sub-list:hover .sub-list a:hover
+         background #eee
+     body:not(...) .head__menu-line .with-sub-list:hover
+       .head__menu-line__main-menu__lvl1
+         background #fff, box-shadow +-1px #eee
+     body .head__login-btn-group
+         background #fff
+
+   NOT ONE OF THEM CARRIES !important (checked, all five), so one !important
+   declaration each is enough and no specificity arithmetic is needed. Writing
+   it this way also makes it theme-INDEPENDENT: the same rule wins over the
+   light sheet's #fff and the dark sheet's #161616, so the bar looks the same
+   whichever way the reader's cookie falls, which is the behaviour this file
+   wants anyway. The icon-f brand red (#de2600) is deliberately NOT taken - it
+   is the site's own mark, kept here for the same reason --nx-highlight keeps
+   xnxx's yellow. */
+html[data-nx-thumbwall] [data-nx-bar] .head__menu-line a:hover,
+html[data-nx-thumbwall] [data-nx-bar] .head__menu-line .with-sub-list:hover .head__menu-line__main-menu__lvl1 {
+  background-color: var(--nx-raised-hi) !important;
+  color: var(--nx-text) !important;
+  box-shadow: 0 0 0 1px var(--nx-edge) !important;
+}
+html[data-nx-thumbwall] [data-nx-bar] .head__menu-line .with-sub-list:hover .sub-list {
+  background-color: var(--nx-raised) !important;
+  border: 1px solid var(--nx-edge) !important;
+  box-shadow: 0 10px 24px -14px var(--nx-shadow) !important;
+}
+html[data-nx-thumbwall] [data-nx-bar] .head__menu-line .sub-list a {
+  color: var(--nx-text) !important;
+}
+html[data-nx-thumbwall] [data-nx-bar] .head__menu-line .sub-list a:hover {
+  background-color: var(--nx-raised-hi) !important;
+  color: var(--nx-accent-hi) !important;
+}
+/* .head__login-btn-group IS NOT TAKEN, AND THAT IS A MEASUREMENT. The light
+   sheet does carry 'body .head__login-btn-group{background:#fff}', so a grep
+   of the stylesheet puts it in the same list as the four rules above - and a
+   grep is not a measurement. Measured 2026-10-06 on a genuine light-sheet load
+   with the group's own is-opened class set: the group computes
+   rgba(0, 0, 0, 0) on this shell, and its two controls read 16.44 (Login) and
+   18.79 (Join for FREE) against the bar's own fill. That #fff rule belongs to
+   a state this shell does not reach. Nothing to fix, so nothing is written.
+
+   THE INSTRUMENT TRAP THAT NEARLY PUT A WRONG RULE HERE, recorded because it
+   cost two wrong readings in one session and will cost the next one too: a
+   probe browser window that is OCCLUDED produces no frames, so a running CSS
+   transition never advances and getComputedStyle reports its START value
+   forever. This file gives the bar's controls a 0.12s background/color
+   transition, so the Join button measured rgb(229,229,229) under light text -
+   contrast 1.13, a screaming failure - for as long as it was sampled (2.8s,
+   five samples, perfectly stable, which is exactly what makes it convincing).
+   Setting 'transition: none !important' first and re-reading gives
+   rgb(0, 0, 0) and contrast 18.79. The same freeze had already inverted a
+   rest/revealed opacity reading earlier the same day. KILL TRANSITIONS BEFORE
+   MEASURING COLOUR, or measure in a window that is actually painting. */
 
 /* TWO INDEPENDENT REVEALS, and neither can be reached by a rule the site ships.
      [data-nx-topbar]  the pointer is within 4px of the top of the viewport -
@@ -2071,8 +2274,8 @@ html[data-nx-thumbwall] :is(#header, div.head__top) {
    is gated on the reader having acted. The keyboard route is not weakened: the
    first Tab IS the act that opens the gate, and the same keystroke lands focus
    in the bar. */
-html[data-nx-thumbwall][data-nx-topbar] :is(#header, div.head__top),
-html[data-nx-thumbwall][data-nx-topfocus] :is(#header, div.head__top) {
+html[data-nx-thumbwall][data-nx-topbar] :is(#header, [data-nx-bar]),
+html[data-nx-thumbwall][data-nx-topfocus] :is(#header, [data-nx-bar]) {
   opacity: 1;
   pointer-events: auto;
 }
@@ -2080,7 +2283,7 @@ html[data-nx-thumbwall][data-nx-topfocus] :is(#header, div.head__top) {
 /* Under reduce the bar simply appears - no rule here, so opacity is a step
    change. The transition is the ONLY motion this file adds to the chrome. */
 @media (prefers-reduced-motion: no-preference) {
-  html[data-nx-thumbwall] :is(#header, div.head__top) {
+  html[data-nx-thumbwall] :is(#header, [data-nx-bar]) {
     transition: opacity var(--nx-dur-2) var(--nx-ease);
   }
 }
@@ -2227,11 +2430,16 @@ html[data-nx-watch] div.video-metadata.video-tags-list li:not(.main-uploader):no
    both marked on the way up to <body> - keeps only its own bled child, the
    grid, or the hero; everything else at every level (comments, ads, an
    other-videos list, a toolbar) is a sibling at SOME level of that chain and
-   is caught here, however it is named. #header/.head__top are excluded
-   explicitly because the topbar sits OUTSIDE the bled chain on both shells
-   (a sibling of #content under <body>, never inside it) and must survive
-   regardless of what level it sits at. */
-html[data-nx-watch] [data-nx-bleed] > *:not([data-nx-bleed]):not([data-nx-grid]):not([data-nx-hero]):not([data-nx-strip]):not(#header):not(.head__top) {
+   is caught here, however it is named. #header/.head__top/[data-nx-bar] are
+   excluded explicitly because the topbar sits OUTSIDE the bled chain on both
+   shells (a sibling of #content under <body>, never inside it) and must
+   survive regardless of what level it sits at. [data-nx-bar] joined the list
+   2026-10-06 with the wrapper: on xvideos the node directly under <body> is
+   now the wrapper, not .head__top, so without it the bar would be eliminated
+   by its own exclusion rule the moment <body> is the bled ancestor.
+   .head__top is KEPT alongside - the wrapper only exists on a shell that has
+   one to wrap, and this rule must stay correct on a shell that does not. */
+html[data-nx-watch] [data-nx-bleed] > *:not([data-nx-bleed]):not([data-nx-grid]):not([data-nx-hero]):not([data-nx-strip]):not(#header):not(.head__top):not([data-nx-bar]) {
   display: none !important;
 }
 /* THE RELATED RAIL SHIPS ITS OWN PAGINATION, hidden by the site's own
@@ -3093,25 +3301,61 @@ html[data-nx-watch] .mozaique[data-nx-grid="on"] > [data-nx-card] {
      direct children of <body> instead - div.head__top (1512x40) and
      div.head__menu-line (1512x30), measured at 1512 on 2026-09-13.
 
-     Only div.head__top is the BAR. It carries the search box, which is the one
-     control a keyboard user must still be able to reach - the reason the bar is
-     hidden with opacity rather than display:none. div.head__menu-line is a
-     second navigation row; under the keep-list that is chrome, and it is purged
-     with the rest rather than stacked under a bar whose height would then have
-     to be measured at runtime to position it. */
-  const TOPBAR_SEL = '#header, div.head__top';
+     BOTH ROWS ARE THE BAR, as of 2026-10-06. div.head__top carries the search
+     box; div.head__menu-line carries the site's horizontal menu (Best Videos /
+     Categories / Channels / Pornstars / Live Cams / Dating / Girlfriend /
+     Games / Profiles). Until now only the first was kept and the second was
+     purged as chrome - which left a bar that was missing half the navigation
+     AND, because neither row paints a background of its own, was transparent
+     over the scrolling wall.
 
-  /* Not 0: a pointer resting exactly at y=0 is the browser chrome's edge. The
-     value itself lives in NIX_TOPBAR_BAND at the top of the file - one band
-     for every host, widened 2026-09-14 so the bar can be revealed without
-     reaching the edge the browser's own fullscreen toolbar watches. */
+     THE WRAPPER IS WHAT MAKES ONE BAR OUT OF TWO SIBLINGS. See the sheet's
+     "THE ANCHOR IS [data-nx-bar]" block for why a generated parent beat both
+     alternatives (a hardcoded second `top`, or a ResizeObserver feeding one).
+     This is the one place in this module where the JS does more than MARK, and
+     it is deliberate: there is no attribute that can make two siblings share a
+     background. It is also the one place that must UNDO itself - topbarUnwrap
+     runs from standDown, so a page that stands down is handed its own DOM back
+     in its own order. */
+  const TOPBAR_SEL = '#header, [data-nx-bar]';
+  const BAR_ATTR = 'data-nx-bar';
+
+  /* xnxx: returns null and nothing happens - #header is already the one node.
+     Re-entrant: a second call finds the wrapper it made and leaves it alone,
+     which matters because applyAll runs many times per page. */
+  function topbarWrap() {
+    const top = document.querySelector('body > div.head__top');
+    if (!top) { return null; }
+    const held = top.parentElement;
+    if (held && held.hasAttribute(BAR_ATTR)) { return held; }
+    const bar = document.createElement('div');
+    bar.setAttribute(BAR_ATTR, '');
+    top.parentNode.insertBefore(bar, top);
+    bar.appendChild(top);
+    /* nextElementSibling, not a fresh query: the menu row is only ours to take
+       when it is the row that was sitting directly under this bar. A shell that
+       ships one without the other, or in another order, is left alone. */
+    const menu = bar.nextElementSibling;
+    if (menu && menu.matches('div.head__menu-line')) { bar.appendChild(menu); }
+    return bar;
+  }
+
+  /* Hand the rows back in their own order, at the wrapper's own place. A node
+     the site has since re-parented is not ours to move, so this walks the
+     wrapper's CURRENT children rather than remembering which two went in. */
+  function topbarUnwrap() {
+    for (const bar of document.querySelectorAll('[' + BAR_ATTR + ']')) {
+      const parent = bar.parentNode;
+      if (!parent) { continue; }
+      while (bar.firstChild) { parent.insertBefore(bar.firstChild, bar); }
+      bar.remove();
+    }
+  }
+
+  /* Always shown within this many px of the true top, whichever direction
+     scroll is going. Value lives in NIX_TOPBAR_BAND - one band for every
+     host. */
   const TOPBAR_EDGE = NIX_TOPBAR_BAND;
-
-  /* Hysteresis. Without it the bar closes the instant the pointer crosses its
-     own bottom edge, which is exactly where you move to use it. The bar's
-     bottom is MEASURED at that moment rather than assumed: both shells are
-     106px today and nothing guarantees they stay that way. */
-  const TOPBAR_SLACK = NIX_TOPBAR_SLACK;
 
   function topbarSet(on) {
     document.documentElement.toggleAttribute('data-nx-topbar', on);
@@ -3142,12 +3386,17 @@ html[data-nx-watch] .mozaique[data-nx-grid="on"] > [data-nx-card] {
     if (node && e.target && node.contains(e.target)) { topbarFocusSet(true); }
   }
 
-  function topbarOnMove(e) {
-    if (e.clientY <= TOPBAR_EDGE) { topbarSet(true); return; }
-    if (!document.documentElement.hasAttribute('data-nx-topbar')) { return; }
-    const node = document.querySelector(TOPBAR_SEL);
-    const bottom = node ? node.getBoundingClientRect().bottom : 0;
-    if (e.clientY > bottom + TOPBAR_SLACK) { topbarSet(false); }
+  /* Module scope, same reasoning as topbarActed above: one sample stream
+     per page, not per life. */
+  let topbarLastScrollY = 0;
+
+  function topbarOnScroll() {
+    const y = window.scrollY;
+    const delta = y - topbarLastScrollY;
+    topbarLastScrollY = y;
+    if (y <= TOPBAR_EDGE) { topbarSet(true); return; }
+    if (delta > NIX_TOPBAR_SCROLL_DELTA_MIN) { topbarSet(false); return; }
+    if (delta < -NIX_TOPBAR_SCROLL_DELTA_MIN) { topbarSet(true); }
   }
 
   /* Its OWN controller, and that is the point: a stand-down (a pass that no
@@ -3158,7 +3407,8 @@ html[data-nx-watch] .mozaique[data-nx-grid="on"] > [data-nx-card] {
     const ac = new AbortController();
     life.topbarAc = ac;
     const opts = { passive: true, signal: ac.signal };
-    document.addEventListener('pointermove', live(life, topbarOnMove), opts);
+    /* window: scroll has no ancestor to bubble from, it IS the target. */
+    window.addEventListener('scroll', live(life, topbarOnScroll), opts);
     /* focusin alone would leave the bar pinned open when focus blurs to <body>,
        which fires no focusin at all - hence focusout as well. capture:true so a
        handler that stops propagation cannot silence us. */
@@ -3172,13 +3422,6 @@ html[data-nx-watch] .mozaique[data-nx-grid="on"] > [data-nx-card] {
       /* the focus has not moved yet when focusout fires */
       later(life, topbarSyncFocus, 0);
     }), { capture: true, signal: ac.signal });
-    /* pointerleave does not bubble and fires only when the pointer leaves the
-       element AND its subtree, so this is "the pointer left the page" - park
-       the bar rather than leave it open over a page nobody is pointing at.
-       A keyboard user is unaffected: [data-nx-topfocus] holds it open on its own. */
-    document.documentElement.addEventListener('pointerleave', live(life, function () {
-      topbarSet(false);
-    }), opts);
   }
 
   function topbarDisarm(life) {
@@ -3196,6 +3439,12 @@ html[data-nx-watch] .mozaique[data-nx-grid="on"] > [data-nx-card] {
      entry in document.adoptedStyleSheets. Everything in the sheet is scoped
      html[data-nx-thumbwall] as well, which is belt to that braces. */
   function engage(life) {
+    /* BEFORE the gate, unlike everything below it. applyAll runs many times per
+       page, and a shell that re-renders its own header would otherwise keep the
+       rows it re-made OUTSIDE a wrapper built on the first pass - a bar that
+       silently goes transparent again mid-session. topbarWrap is re-entrant, so
+       every pass after the first costs one querySelector. */
+    topbarWrap();
     if (life.engaged) { return; }
     life.engaged = true;
     adoptSheet(life);
@@ -3212,6 +3461,7 @@ html[data-nx-watch] .mozaique[data-nx-grid="on"] > [data-nx-card] {
   function standDown(life) {
     life.engaged = false;
     topbarDisarm(life);
+    topbarUnwrap();
     nxUnpaint();
     gridTeardownDom();
     document.documentElement.removeAttribute('data-nx-thumbwall');
@@ -3503,9 +3753,13 @@ html[data-nx-watch] .mozaique[data-nx-grid="on"] > [data-nx-card] {
    #adinhead, #mobimenu, #lionmenu, #searcharea and #nightandday. So one rule
    on one node hides the entire header, and there is no second removal list.
 
-   Hidden at rest, revealed two ways: the pointer within TOP_REVEAL_PX of the
-   top edge, and KEYBOARD FOCUS landing inside the bar. It is NOT scroll-driven;
-   scroll position is never read.
+   Hidden at rest, revealed two ways: SCROLL DIRECTION (up reveals, down
+   hides - the standard pattern, replacing the original pointer-proximity
+   reveal 2026-09-30), and KEYBOARD FOCUS landing inside the bar. Always
+   shown within TOP_REVEAL_PX of the true top regardless of direction, same
+   as the old pointer version was always shown within that band of the top
+   edge - the "near the top" concept carried over, only the SIGNAL driving it
+   changed.
 
    There is NO (hover: none) branch, and its absence is deliberate: a userscript
    manager runs in a desktop browser - mobile Chrome has no extension support at
@@ -4360,10 +4614,26 @@ html[data-ep-watch] #movieplayer-box > *:not([data-ep-hero]):not([data-ep-strip]
 html[data-ep-watch] #EPimLayerOuter { display: none !important; }
 
 /* THE INFO STRIP (see epMarkStrip). #uvpmenu is KEPT now, not purged - it
-   is the like/dislike row the strip exists for; only #uvmnew (Comments /
-   Scenes / Statistics / Share / Save / Report / Download) inside it goes.
-   In #video-info-tags only the Subscribe control and the pornstar link
-   survive; every other chip is a category tag. */
+   is the like/dislike row the strip exists for. #uvmnew inside it (Comments /
+   Scenes / Statistics / Share / Save / Report / Download, one <span> each:
+   .uvmspn1..7 in that order, measured 2026-09-30) used to go entirely; now
+   only .uvmspn1 (Comments) and .uvmspn4 (Share) survive - a secondary-
+   actions slot, matching the comments/share/favorite row pornhub and
+   xhamster already carry natively (homogeneous CONTROL SET across sites,
+   not a forced identical row order - see the operator's own scoping call).
+   In #video-info-tags only the Subscribe control and the channel link
+   survive; every other chip is a category or a tag.
+
+   BUG, FOUND AND FIXED 2026-09-30: the channel link's real class is
+   li.vit-uploader (measured on a live watch page - text was literally the
+   channel name, "turkenarchive"), not li.vit-pornstar. The :not() list
+   named only .vit-pornstar, which never matched anything observed, so the
+   channel name was hidden by the SAME rule meant to keep it - it fell
+   through to the generic "every other chip" branch along with the category
+   tags. .vit-pornstar is kept alongside rather than replaced: zero cost if
+   it never matches, and it may be real on a video attributed to a verified
+   pornstar profile rather than a channel upload - a shape this file has
+   not yet measured. */
 html[data-ep-watch] [data-ep-strip] {
   display: flex !important;
   flex-wrap: wrap !important;
@@ -4377,8 +4647,15 @@ html[data-ep-watch] [data-ep-strip] {
   float: none !important;
   height: auto !important;
 }
-html[data-ep-watch] #uvmnew,
-html[data-ep-watch] #video-info-tags li:not(.vit-subscribe):not(.vit-pornstar) {
+html[data-ep-watch] #video-info-tags li:not(.vit-subscribe):not(.vit-uploader):not(.vit-pornstar) {
+  display: none !important;
+}
+html[data-ep-watch] #uvmnew {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px 14px !important;
+}
+html[data-ep-watch] #uvmnew > *:not(.uvmspn1):not(.uvmspn4) {
   display: none !important;
 }
 /* "RIGHT BELOW THE VIDEO". #video-info is #movieplayer-left's FIRST child in
@@ -4449,9 +4726,10 @@ html[data-ep-watch] .exo-native-widget { display: none !important; }
       sweepLeft: 0,
       /* The top bar's state: two independent inputs, one written attribute. */
       topOn: false,
-      topNear: false,
+      topScroll: false,
       topFocus: false,
-      userActed: false
+      userActed: false,
+      lastScrollY: 0     /* direction is a DELTA, so the previous sample has to live somewhere */
     };
   }
 
@@ -4757,14 +5035,19 @@ html[data-ep-watch] .exo-native-widget { display: none !important; }
   /* =========================================================================
      6. THE TOP BAR
 
-     One attribute on <html>, one pointermove handler. Not scroll-driven:
-     scroll position is never read. See WHY block section 5.
+     One attribute on <html>, one scroll handler. SCROLL-DRIVEN as of
+     2026-09-30, replacing the original pointer-proximity reveal - see WHY
+     block section 5 for the history and for why the FOCUS half below is
+     untouched (a different bug, a different fix, still needed).
      ========================================================================= */
 
-  /* Not one pixel: clientY is an integer and a fast pointer can skip row 0
-     between samples. The value lives in NIX_TOPBAR_BAND at the top of the
-     file - one band for every host, see the note there. */
+  /* Always shown within this many px of the true top - matches the band
+     every other host in this file uses for the same "near the top edge"
+     concept. Lives in NIX_TOPBAR_BAND at the top of the file. */
   const TOP_REVEAL_PX = NIX_TOPBAR_BAND;
+  /* Below the noise floor of a trackpad's sub-pixel deltas; a fast mouse
+     wheel step is an order of magnitude past this. */
+  const TOP_SCROLL_DELTA_MIN = 6;
   const TOP_ID = 'top2';
 
   function topBar() {
@@ -4776,13 +5059,13 @@ html[data-ep-watch] .exo-native-widget { display: none !important; }
   }
 
   /**
-   * ONE writer for the attribute, from TWO independent inputs - the pointer
-   * and focus - so neither can clobber the other. Writes ONLY on a state
-   * change: a pointermove handler that sets the same attribute on every sample
-   * is a style invalidation per sample.
+   * ONE writer for the attribute, from TWO independent inputs - scroll
+   * direction and focus - so neither can clobber the other. Writes ONLY on a
+   * state change: a scroll handler that sets the same attribute on every
+   * sample is a style invalidation per sample.
    */
   function topSync(life) {
-    const want = life.topNear || life.topFocus;
+    const want = life.topScroll || life.topFocus;
     if (want === life.topOn) { return; }
     const root = document.documentElement;
     if (!root) { return; }
@@ -4792,16 +5075,21 @@ html[data-ep-watch] .exo-native-widget { display: none !important; }
   }
 
   /**
-   * Reveal near the top edge; keep revealed while the pointer is still inside
-   * the bar. The containment test reads no layout - event.target is already in
-   * hand - so hovering the bar's own dropdowns cannot dismiss it, and there is
-   * no getBoundingClientRect on a pointermove.
+   * Reveal on scroll UP, hide on scroll DOWN - the standard pattern (Medium,
+   * most mobile chrome). Always shown within TOP_REVEAL_PX of the true top,
+   * regardless of direction, so the bar is never hidden at the point a
+   * reader who just landed would look for it. A dead zone below
+   * TOP_SCROLL_DELTA_MIN absorbs sub-pixel/rounding noise between samples so
+   * a stationary pointer over a still page cannot flicker the attribute.
    */
-  function topOnPointerMove(life, e) {
+  function topOnScroll(life) {
     if (life.torn || L !== life || !life.armed) { return; }
-    const bar = topBar();
-    if (!bar) { return; }
-    life.topNear = e.clientY <= TOP_REVEAL_PX || (life.topOn && topIn(bar, e.target));
+    const y = window.scrollY;
+    const delta = y - life.lastScrollY;
+    life.lastScrollY = y;
+    if (y <= TOP_REVEAL_PX) { life.topScroll = true; }
+    else if (delta > TOP_SCROLL_DELTA_MIN) { life.topScroll = false; }
+    else if (delta < -TOP_SCROLL_DELTA_MIN) { life.topScroll = true; }
     topSync(life);
   }
 
@@ -4979,11 +5267,11 @@ html[data-ep-watch] .exo-native-widget { display: none !important; }
     life.mo = new MutationObserver(function () { wallSchedule(life); });
     wallApply(life);
 
-    /* All four capture, all four passive where they can be: none of them calls
-       preventDefault, and a non-passive pointermove listener on document is a
-       scrolling cost for nothing. */
-    on(life, document, 'pointermove', function (e) { topOnPointerMove(life, e); },
-      { passive: true, capture: true });
+    /* All passive where they can be: none of them calls preventDefault, and a
+       non-passive scroll listener is a jank cost for nothing. scroll itself
+       has no ancestor to capture from - window IS the target - so it carries
+       no capture flag, unlike the other three. */
+    on(life, window, 'scroll', function () { topOnScroll(life); }, { passive: true });
     on(life, document, 'pointerdown', function () { topOnPointerDown(life); },
       { passive: true, capture: true });
     on(life, document, 'keydown', function (e) { topOnKeydown(life, e); },
@@ -5733,9 +6021,12 @@ html[${WATCH_FLAG}] [class~="FYjf-gWsp-b"] { display: none !important; }
       apply(life);
       life.mo = new MutationObserver(() => schedule(life));
       life.mo.observe(root(), { childList: true, subtree: true });
-      document.addEventListener('pointermove', live(life, getL, topbar.onMove), { passive: true, ...opts });
-      document.documentElement.addEventListener('pointerleave', live(life, getL, () => topbar.topSet(false)),
-        { passive: true, ...opts });
+      /* window, not document: scroll has no ancestor to bubble from, it IS
+         the target. No pointerleave hide any more either - that existed to
+         stop a pointer-revealed bar getting stuck open once the pointer
+         left the page, a risk scroll direction does not share (state only
+         ever changes on an actual scroll sample or a focus change). */
+      window.addEventListener('scroll', live(life, getL, topbar.onScroll), { passive: true, ...opts });
       document.addEventListener('keydown', live(life, getL, topbar.onKeydown), opts);
       document.addEventListener('pointerdown', live(life, getL, (l) => { l.acted = true; }),
         { passive: true, ...opts });
@@ -6376,9 +6667,12 @@ html[${WATCH_FLAG}] [${STRIP_ATTR}] div.video-info-row.showLess {
       apply(life);
       life.mo = new MutationObserver(() => schedule(life));
       life.mo.observe(root(), { childList: true, subtree: true });
-      document.addEventListener('pointermove', live(life, getL, topbar.onMove), { passive: true, ...opts });
-      document.documentElement.addEventListener('pointerleave', live(life, getL, () => topbar.topSet(false)),
-        { passive: true, ...opts });
+      /* window, not document: scroll has no ancestor to bubble from, it IS
+         the target. No pointerleave hide any more either - that existed to
+         stop a pointer-revealed bar getting stuck open once the pointer
+         left the page, a risk scroll direction does not share (state only
+         ever changes on an actual scroll sample or a focus change). */
+      window.addEventListener('scroll', live(life, getL, topbar.onScroll), { passive: true, ...opts });
       document.addEventListener('keydown', live(life, getL, topbar.onKeydown), opts);
       document.addEventListener('pointerdown', live(life, getL, (l) => { l.acted = true; }),
         { passive: true, ...opts });

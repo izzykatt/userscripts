@@ -410,6 +410,63 @@ Parsed {desc, photos} live in localStorage (key nix-leolist.v1:<href>, TTL 6h, c
 
 ## thumbwall
 
+### [5.1.0] - 2026-10-06
+
+#### Fixed
+
+- **The xvideos topbar had no background, and it never did.** Measured stock on
+  the logged-out index, in BOTH site themes — `<body>` white (1497px) and
+  `<body>` dark (1000px) — `div.head__top` and `div.head__menu-line` each
+  compute `background-color: rgba(0, 0, 0, 0)`. The only fill under that header
+  is `<body>`'s own, which works while the bar is in flow and not at all once
+  the script fixes it over a scrolling wall. The site's one
+  `body .head__top{background-color:#fff}` rule is dead on this shell: a later
+  `body .head__top{position:relative}` wins the position and nothing restores
+  the fill. The bar now paints `--nx-surface` with a `--nx-edge` bottom border.
+- **The horizontal menu row is back.** `div.head__menu-line` was purged as "a
+  second navigation row, which under the keep-list is chrome". It is the site's
+  own menu — Best Videos / Categories / Channels / Pornstars / Profiles — which
+  is navigation of exactly the kind the bar is kept for.
+- **Nested menus were white with light text — contrast 1.20.** `nxRepaint`
+  reads COMPUTED styles, so it can only ever see the AT-REST paint; a `:hover`
+  rule paints nothing until a pointer arrives, so the repainter set the text
+  light and never saw the site swap the surface to `#fff` underneath it. Only
+  visible to readers on the LIGHT stylesheet (`css/default/main.css`, chosen by
+  the `session_ath` cookie) — on `main-black-*.css` the same flyout computes
+  `rgb(22,22,22)` and reads fine, which is why four shells of probing missed
+  it. The five light-sheet rules are overridden from the theme, enumerated from
+  the stylesheet rather than guessed, and none of the five carried
+  `!important`. Measured after: **0 of 54** rated text nodes below 4.5:1 in the
+  bar, in BOTH themes, with the bar revealed, 67 nodes force-hovered, 7
+  dropdowns force-opened by class, translucent foregrounds composited over
+  their surface before rating, and **every transition killed first** — an
+  occluded probe window produces no frames, so a running transition is frozen
+  at its START value and `getComputedStyle` reports that: it made an 18.79 pair
+  read as 1.13, stable across five samples, and inverted a rest/revealed
+  opacity reading the same day.
+
+#### Changed
+
+- **The bar on xvideos is now a generated `[data-nx-bar]` wrapper** holding both
+  rows, created in `engage()` and removed again in `standDown()`. `#header` is
+  that one node on xnxx, the wrapper is it on xvideos, so every rule positions,
+  paints and fades exactly one box on both hosts. Two separately-fixed boxes
+  were rejected: the second one's `top` is the first one's HEIGHT, which CSS
+  cannot read — and a hardcoded number is wrong at a second width TODAY
+  (`head__menu-line` measures 30px at 1497 and 46px at 1000, so the bar is 71px
+  and 87px respectively). CSS anchor positioning expresses it exactly and was
+  rejected for shipping to Firefox readers.
+- **The break-out margin stops overhanging.** `body .width-full-body` is
+  `margin: 0 -80px; width: calc(100% + 160px)`, the site's own escape from
+  `<body>`'s 80px inline padding — which this script zeroes, so the escape had
+  nothing left to compensate for: measured `x=-80, width=1528` in a 1448px
+  viewport, i.e. the bar's content sat 80px left of where it belonged.
+- **The promo-link scope widened from the search row to the whole bar.** The
+  scope was always meant to be "the bar"; the bar was the search row only while
+  that was all of it that survived. Removes `RED videos` (`www.xvideos.red`)
+  and `Live Cams` / `Dating` / `Girlfriend` / `Games` (all `s.zline0.com`) from
+  the menu row — hostnames verified, not inferred from the labels.
+
 ### [5.0.0] - 2026-09-15
 
 #### Added
