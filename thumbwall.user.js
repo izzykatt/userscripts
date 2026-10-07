@@ -2,7 +2,7 @@
 // @name         Pornhub, XVideos, XNXX, xHamster & Eporner – Clean Widescreen Gallery
 // @namespace    izzykatt.ca
 // @version      5.1.0
-// @description  Uncluttered full-width thumbnail wall for pornhub, xnxx, xvideos, eporner and xhamster. On gallery pages with a multi-row hover-preview grid and real pagination, all but the cards and pager is hidden, the header autohides until the pointer nears the top, and the site's own dark theme is used or restored. Video pages become player + info strip (title, channel, like, subscribe) + related grid. No infinite scroll, filters, downloads or network calls; every other page is left stock.
+// @description  Full-width thumbnail wall for pornhub, xnxx, xvideos, eporner and xhamster. On gallery pages with a multi-row hover grid and real pagination, all but the cards and pager is hidden, the header autohides and returns on scroll up, and the site's dark theme is used or restored. On xvideos it keeps BOTH site rows - search and menu - in one bar with a background. Video pages become player + info strip + related grid. No infinite scroll, filters, downloads or network calls.
 // @author       Izzy Katt
 // @license      MIT
 // @match        https://www.xnxx.com/*

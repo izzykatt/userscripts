@@ -31,7 +31,7 @@ It removes; it never adds.
 ┌─────────────────────────┐
 │header: hidden, slides in│
 │                         │
-│  when pointer nears top │
+│ back when you scroll up │
 └────────────┬────────────┘
              │             
              ▼             
@@ -48,7 +48,12 @@ It removes; it never adds.
 ```
 
 - **Kept:** video cards · pager · the site's own dark theme (used, or restored where the site drops it)
-- **Hidden:** promos · sidebars · tag clouds · footers · sponsor rows · ad slots · in-grid promo tiles (cards that link to no video) · HD/CC/duration badges on thumbnails
+- **The header keeps the site's own navigation.** On xvideos that is BOTH of its
+  rows — the search row and the horizontal menu (Best Videos, Categories,
+  Channels, Pornstars, Profiles) — carried together in one bar with a solid
+  background, because neither row paints one of its own and a see-through bar
+  over a scrolling wall is unreadable.
+- **Hidden:** promos · sidebars · tag clouds · footers · sponsor rows · ad slots · in-grid promo tiles (cards that link to no video) · HD/CC/duration badges on thumbnails · off-site promo links in the header (anything pointing at xvideos.red or zline0.com)
 
 **3. The video page** each card links to becomes:
 
